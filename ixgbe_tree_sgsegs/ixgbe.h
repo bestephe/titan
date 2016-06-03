@@ -219,14 +219,31 @@ struct ixgbe_tx_buffer {
         //bool frag_hr_i_valid[MAX_SKB_FRAGS];
         //ssize_t frag_hr_i[MAX_SKB_FRAGS];
 
+#if 0
         /* Track the sk metadata associated with this segment */
         struct ixgbe_sk_tbl_item *sk_tbl_item;
+#endif
 
         /* Included so more context descriptors can be created. */
 	u32 vlan_macip_lens;
         u32 type_tucmd;
 	u32 mss_l4len_idx;
 };
+
+static inline void ixgbe_tx_buffer_clean(struct ixgbe_tx_buffer *tx_buffer)
+{
+	tx_buffer->next_to_watch = NULL;
+	tx_buffer->skb = NULL;
+	dma_unmap_len_set(tx_buffer, len, 0);
+
+        // Extra variables needed for sg-segmentation
+        //TODO: XXX: Only valid or -1 needs to be set, not both
+        tx_buffer->hr_i = -1;
+        tx_buffer->hr_i_valid = false;
+        tx_buffer->pktr_i = -1;
+        tx_buffer->pktr_i_valid = false;
+        //tx_buffer->sk_tbl_item = NULL;
+}
 
 struct ixgbe_rx_buffer {
 	struct sk_buff *skb;
@@ -292,6 +309,7 @@ struct ixgbe_fwd_adapter {
 #define clear_ring_rsc_enabled(ring) \
 	clear_bit(__IXGBE_RX_RSC_ENABLED, &(ring)->state)
 
+#if 0
 #define IXGBE_SK_TBL_SHIFT                      (14)
 #define IXGBE_SK_TBL_ITEMS                      (1 << IXGBE_SK_TBL_SHIFT)
 
@@ -312,6 +330,7 @@ struct ixgbe_sk_tbl_item {
         // tx_buffers never need to be freed, so this seems more correct
         struct ixgbe_tx_buffer *last_tx_buffer;
 };
+#endif
 
 #define IXGBE_MAX_PKT_BYTES                     (2048)
 //#define IXGBE_TX_PKT_RING_SIZE                  (2048)
@@ -375,10 +394,16 @@ struct ixgbe_ring {
         size_t pktr_next_to_clean;
         size_t pktr_next_to_use;
 
+        //XXX: The NIC shouldn't track which skbs are using which flows.  This
+        // seems like it would be better implemented in the kernel.  I'm going
+        // to disable this for now.  I should come back soon and just remove
+        // this code.
+#if 0
         /* Hashtable of active sk's and a cache for sk metadata */
         DECLARE_HASHTABLE(active_sks_table, IXGBE_SK_TBL_SHIFT);
         spinlock_t active_sks_lock;
         struct kmem_cache *sk_tbl_item_cache;
+#endif
 
 	u16 count;			/* amount of descriptors */
 
@@ -705,6 +730,8 @@ static inline size_t ixgbe_pktr_unused(struct ixgbe_ring *ring)
 	return ((ntc > ntu) ? 0 : ring->pktr_count) + ntc - ntu - 1;
 }
 
+//XXX: I think I should remove the active_sks_table
+#if 0
 /* Helper functions for updating the active_sks_table */
 static inline struct ixgbe_sk_tbl_item *
 ixgbe_active_sks_lookup(struct ixgbe_ring *tx_ring, struct sock *sk)
@@ -817,6 +844,7 @@ ixgbe_active_sks_destroy_table(struct ixgbe_ring *tx_ring)
         ixgbe_active_sks_delete(tx_ring, tbl_item);
     }
 }
+#endif
 
 
 #define IXGBE_RX_DESC(R, i)	    \

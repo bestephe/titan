@@ -66,6 +66,7 @@
 #include "ixgbe_common.h"
 #include "ixgbe_dcb_82599.h"
 #include "ixgbe_sriov.h"
+#include "ixgbe_xmit_batch.h"
 #ifdef CONFIG_IXGBE_VXLAN
 #include <net/vxlan.h>
 #endif
@@ -183,6 +184,15 @@ module_param(use_pkt_ring, uint, 0);
 MODULE_PARM_DESC(use_pkt_ring,
                  "Instead of using the s/g segmentation method, just copy the packet contents into preallocated memory.  Only useful for debugging");
 
+/* Whether xmit batching should be used or not. */
+//TODO: prefetch should apply to the header ring as well as the pkt ring.
+//TODO: Not yet implemented anywhere.
+static int xmit_batch = 0;
+module_param(xmit_batch, uint, 0);
+MODULE_PARM_DESC(xmit_batch,
+                 "Use Gopt style batching to batch segment queuing.");
+
+#if 0
 /* When mapping to the pkt ring, should data be prefetched. */
 //TODO: prefetch should apply to the header ring as well as the pkt ring.
 //TODO: Not yet implemented anywhere.
@@ -190,6 +200,7 @@ static int prefetch_data = 0;
 module_param(prefetch_data, uint, 0);
 MODULE_PARM_DESC(prefetch_data,
                  "When using the pkt ring, should data be prefetched before copies are performed.");
+#endif
 
 MODULE_AUTHOR("Intel Corporation, <linux.nics@intel.com>");
 MODULE_DESCRIPTION("Intel(R) 10 Gigabit PCI Express Network Driver");
@@ -969,14 +980,9 @@ void ixgbe_unmap_and_free_tx_resource(struct ixgbe_ring *ring,
 			       dma_unmap_len(tx_buffer, len),
 			       DMA_TO_DEVICE);
 	}
-	tx_buffer->next_to_watch = NULL;
-	tx_buffer->skb = NULL;
-        tx_buffer->hr_i = -1;
-        tx_buffer->hr_i_valid = false;
-        tx_buffer->pktr_i = -1;
-        tx_buffer->pktr_i_valid = false;
-        tx_buffer->sk_tbl_item = NULL;
-	dma_unmap_len_set(tx_buffer, len, 0);
+
+        ixgbe_tx_buffer_clean(tx_buffer);
+
 	/* tx_buffer must be completely set up in the transmit path */
 }
 
@@ -1175,6 +1181,8 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 		total_bytes += tx_buffer->bytecount;
 		total_packets += tx_buffer->gso_segs;
 
+//XXX: I should just delete all of this sk table stuff
+#if 0
                 /* Check if this is the last skb for a socket.  If so, clean up
                  * the metadata for the sk. */
                 if (tx_buffer->sk_tbl_item) {
@@ -1187,6 +1195,7 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 
                     spin_unlock(&tx_ring->active_sks_lock);
                 }
+#endif
 
                 /* Free any mapped fragments. */
                 //pr_info ("ixgbe_clean_tx_irq:\n");
@@ -1249,14 +1258,7 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
                 }
 
 		/* clear tx_buffer data */
-		tx_buffer->skb = NULL;
-		dma_unmap_len_set(tx_buffer, len, 0);
-                //TODO: XXX: Only valid or -1 needs to be set, not both
-                tx_buffer->hr_i = -1;
-                tx_buffer->hr_i_valid = false;
-                tx_buffer->pktr_i = -1;
-                tx_buffer->pktr_i_valid = false;
-                tx_buffer->sk_tbl_item = NULL;
+                ixgbe_tx_buffer_clean(tx_buffer);
 
 		/* unmap remaining buffers */
 		while (tx_desc != eop_desc) {
@@ -1310,12 +1312,8 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 
                         /* clear tx_buffer data */
                         BUG_ON (tx_buffer->skb != NULL);
-                        dma_unmap_len_set(tx_buffer, len, 0);
-                        tx_buffer->hr_i = -1;
-                        tx_buffer->hr_i_valid = false;
-                        tx_buffer->pktr_i = -1;
-                        tx_buffer->pktr_i_valid = false;
-                        tx_buffer->sk_tbl_item = NULL;
+                        BUG_ON (tx_buffer->next_to_watch != NULL);
+                        ixgbe_tx_buffer_clean(tx_buffer);
 		}
 
 		/* move us one more past the eop_desc for start of next pkt */
@@ -5278,9 +5276,12 @@ static void ixgbe_clean_tx_ring(struct ixgbe_ring *tx_ring)
 		ixgbe_unmap_and_free_tx_resource(tx_ring, tx_buffer_info);
 	}
 
+//XXX: Just remove the sk table code
+#if 0
         /* Remove all of the sk metadata */
         //TODO: check if any sk's have leaked before destroying the table
         ixgbe_active_sks_destroy_table(tx_ring);
+#endif
 
 	netdev_tx_reset_queue(txring_txq(tx_ring));
 
@@ -5698,6 +5699,8 @@ int ixgbe_setup_tx_resources(struct ixgbe_ring *tx_ring)
 	tx_ring->size = tx_ring->count * sizeof(union ixgbe_adv_tx_desc);
 	tx_ring->size = ALIGN(tx_ring->size, 4096);
 
+//XXX: Just remove the sk table stuff
+#if 0
         /* Initialzie the hash table for active sk's and its lock */
         hash_init(tx_ring->active_sks_table);
         spin_lock_init(&tx_ring->active_sks_lock);
@@ -5713,6 +5716,7 @@ int ixgbe_setup_tx_resources(struct ixgbe_ring *tx_ring)
         /* Check if the allocation failed. */
         if (tx_ring->sk_tbl_item_cache == NULL)
             goto err;
+#endif
 
 	set_dev_node(dev, ring_node);
 	tx_ring->desc = dma_alloc_coherent(dev,
@@ -5761,10 +5765,13 @@ int ixgbe_setup_tx_resources(struct ixgbe_ring *tx_ring)
 	return 0;
 
 err:
+//XXX: Remove the sk table in the future
+#if 0
         if (tx_ring->sk_tbl_item_cache != NULL) {
             kmem_cache_destroy(tx_ring->sk_tbl_item_cache);
             tx_ring->sk_tbl_item_cache = NULL;
         }
+#endif
 
         if (tx_ring->desc != NULL) {
             dma_free_coherent(dev, tx_ring->size,
@@ -5928,6 +5935,8 @@ void ixgbe_free_tx_resources(struct ixgbe_ring *tx_ring)
 	vfree(tx_ring->tx_buffer_info);
 	tx_ring->tx_buffer_info = NULL;
 
+//XXX: Get rid of the active sks table in the future
+#if 0
         /* destroy the active_sks_table */
         ixgbe_active_sks_destroy_table(tx_ring);
 
@@ -5936,6 +5945,7 @@ void ixgbe_free_tx_resources(struct ixgbe_ring *tx_ring)
             kmem_cache_destroy(tx_ring->sk_tbl_item_cache);
             tx_ring->sk_tbl_item_cache = NULL;
         }
+#endif
 
 	/* if not set, then don't free */
 	if (!tx_ring->desc) {
@@ -8991,8 +9001,8 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
 			  struct ixgbe_ring *tx_ring)
 {
 	struct ixgbe_tx_buffer *first;
-        struct ixgbe_sk_tbl_item *sk_tbl_item = NULL;
-        struct sock *sk = skb->sk;
+        //struct ixgbe_sk_tbl_item *sk_tbl_item = NULL;
+        //struct sock *sk = skb->sk;
 	int tso;
 	u32 tx_flags = 0;
 	//unsigned short f;
@@ -9001,6 +9011,11 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
         size_t pktr_count = 1;
 	__be16 protocol = skb->protocol;
 	u8 hdr_len = 0;
+
+        /* For experimental ease, allow for run-time configuration of
+         * whether batched packet processing is used or not. */
+        if (xmit_batch)
+            return ixgbe_xmit_frame_ring_batch(skb, adapter, tx_ring);
 
         //pr_info ("ixgbe_xmit_frame_ring: start\n");
         //pr_info (" sk: %p\n", sk);
@@ -9177,6 +9192,9 @@ xmit_fcoe:
             //ixgbe_tx_map_hdr_ring(tx_ring, first, hdr_len);
         }
 
+//XXX: Tracking sockets in the driver seems wrong.  If I convince myself this
+// isn't useful, I should just remove this code.
+#if 0
         /* This function can siliently fail.  Only if it hasn't should we
          * track sk metadata. */
         if ((first != &tx_ring->tx_buffer_info[tx_ring->next_to_use]) && sk) {
@@ -9219,6 +9237,7 @@ xmit_fcoe:
             /* Release the lock */
             spin_unlock(&tx_ring->active_sks_lock);
         }
+#endif
 
         //pr_info ("ixgbe_xmit_frame_ring: finish\n");
 
