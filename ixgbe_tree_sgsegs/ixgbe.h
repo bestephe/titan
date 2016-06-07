@@ -183,6 +183,103 @@ struct vf_macvlans {
 //#define TXD_SGSEGS_USE_COUNT(S, GSO_SIZE) DIV_ROUND_UP((S), (GSO_SIZE))
 #define DESC_NEEDED (MAX_SKB_FRAGS + 4)
 
+//XXX: These next definitions may be out of place
+#define IXGBE_MAX_PKT_BYTES                     (2048)
+//#define IXGBE_TX_PKT_RING_SIZE                  (2048)
+struct ixgbe_single_pkt {
+    u8  raw[IXGBE_MAX_PKT_BYTES];
+};
+
+//TODO: 512 is the maximum header size the ixgbe will handle. What is a
+//typical header size? We could size the descriptors according to
+//that.
+//#define IXGBE_MAX_HDR_BYTES                     (512)
+#define IXGBE_MAX_HDR_BYTES                     (256) //hdr_len is a u8, so 256 is clearly a driver internal max on header length
+struct ixgbe_pkt_hdr {
+    u8  raw[IXGBE_MAX_HDR_BYTES];
+};
+//TODO: somewhere place a BUG_ON(sizeof(ixgbe_pkt_hdr) != 512)
+
+#define IXGBE_DEFAULT_HDR_RING_BYTES        (IXGBE_MAX_HDR_BYTES * IXGBE_DEFAULT_TXD)
+
+//TODO: This value has been picked arbitrarily.  I should measure what a
+//reasonable value of this should be.
+//TODO: perhaps current batch size should be a module parameter to make
+//measurement easier.
+#define IXGBE_MAX_XMIT_BATCH_SIZE           (16)
+#define IXGBE_MAX_XMIT_BATCH_SIZE_          (15)
+
+/* Module parameters accessed by ixgbe_xmit_batch.c */
+extern int drv_gso_size;
+extern int use_sgseg;
+extern int use_pkt_ring;
+extern int xmit_batch;
+
+static inline u16 ixgbe_txd_count(struct sk_buff *skb)
+{
+	unsigned short f;
+        u16 count = 0;
+
+        count = TXD_USE_COUNT(skb_headlen(skb));
+	for (f = 0; f < skb_shinfo(skb)->nr_frags; f++)
+		count += TXD_USE_COUNT(skb_shinfo(skb)->frags[f].size);
+
+        return count;
+}
+
+/* This function currently provides an over-estimate of the number of
+ * descriptors needed to enqueue each segment.  This implies that segments
+ * that require less descriptors will need to create valid data descriptors
+ * of length 0 with any remaining allocated descriptors.  An exact allocation
+ * would be possible, but it would require more compuation. */
+/* XXX: BS: It is not immediately obvious to me which choice is better. */
+static inline u16 ixgbe_txd_count_sgsegs(struct sk_buff *skb)
+{
+        u16 per_seg_count = 0;
+        u16 count = 0;
+
+        BUG_ON (skb_headlen(skb) > IXGBE_MAX_HDR_BYTES);
+        BUG_ON (TXD_USE_COUNT(skb_headlen(skb)) != 1);
+
+        //XXX: This count assumes that the drv_gso_size is less than
+        // IXGBE_MAX_DATA_PER_TXD.  This requirement can be removed, but the
+        // count will need to be increased and this code changed.
+        BUG_ON (drv_gso_size > IXGBE_MAX_DATA_PER_TXD);
+
+        /* Sgsegs should need at most 4 descriptors per seg, but often use 3:
+         *          (+ 1 desc for context descriptor)
+         *          (+ 1 desc for header descriptor)
+         *          (+ 1 desc for data descriptor)
+         *          (?+1 desc if the segment falls on a boundary)
+         */
+        per_seg_count = 4;
+
+        count = per_seg_count * skb_shinfo(skb)->gso_segs;
+
+        return count;
+}
+
+static inline u16 ixgbe_txd_count_pktring(struct sk_buff *skb)
+{
+        u16 per_seg_count = 0;
+        u16 count = 0;
+
+        //XXX: This count assumes that the drv_gso_size is less than
+        // IXGBE_MAX_DATA_PER_TXD.  This requirement can be removed, but the
+        // count will need to be increased.
+        BUG_ON (drv_gso_size > IXGBE_MAX_DATA_PER_TXD);
+
+        /* Pkt ring should need at most 2 descriptors per seg:
+         *          (+ 1 desc for context descriptor)
+         *          (+ 1 desc for header+data descriptor)
+         */
+        per_seg_count = 2;
+
+        count = per_seg_count * skb_shinfo(skb)->gso_segs;
+
+        return count;
+}
+
 /* wrapper around a pointer to a socket buffer,
  * so a DMA handle can be stored along with the buffer */
 struct ixgbe_tx_buffer {
@@ -228,6 +325,17 @@ struct ixgbe_tx_buffer {
 	u32 vlan_macip_lens;
         u32 type_tucmd;
 	u32 mss_l4len_idx;
+};
+
+/* wrapper around skb metadata for processing tx skb's in a batch. */
+struct ixgbe_skb_batch_data {
+        struct sk_buff *skb;
+        u16 desc_count;
+        u16 desc_ftu;
+        u16 hr_count;
+        u16 hr_ftu;
+        u16 pktr_count;
+        u16 pktr_ftu;
 };
 
 static inline void ixgbe_tx_buffer_clean(struct ixgbe_tx_buffer *tx_buffer)
@@ -332,23 +440,6 @@ struct ixgbe_sk_tbl_item {
 };
 #endif
 
-#define IXGBE_MAX_PKT_BYTES                     (2048)
-//#define IXGBE_TX_PKT_RING_SIZE                  (2048)
-struct ixgbe_single_pkt {
-    u8  raw[IXGBE_MAX_PKT_BYTES];
-};
-
-//TODO: 512 is the maximum header size the ixgbe will handle. What is a
-//typical header size? We could size the descriptors according to
-//that.
-//#define IXGBE_MAX_HDR_BYTES                     (512)
-#define IXGBE_MAX_HDR_BYTES                     (256) //hdr_len is a u8, so 256 is clearly a driver internal max on header length
-struct ixgbe_pkt_hdr {
-    u8  raw[IXGBE_MAX_HDR_BYTES];
-};
-//TODO: somewhere place a BUG_ON(sizeof(ixgbe_pkt_hdr) != 512)
-
-#define IXGBE_DEFAULT_HDR_RING_BYTES         (IXGBE_MAX_HDR_BYTES * IXGBE_DEFAULT_TXD)
 struct ixgbe_ring {
 	struct ixgbe_ring *next;	/* pointer to next ring in q_vector */
 	struct ixgbe_q_vector *q_vector; /* backpointer to host q_vector */
@@ -393,6 +484,16 @@ struct ixgbe_ring {
         size_t pktr_count;
         size_t pktr_next_to_clean;
         size_t pktr_next_to_use;
+
+        /* Array of skb's to be transmitted in a batch */
+        //TODO: should this be for each skb or for each packet?
+        //TODO: some things need to be done per-segment and other things
+        // should be done per-packet.
+        struct ixgbe_skb_batch_data skb_batch[IXGBE_MAX_XMIT_BATCH_SIZE];
+        u16 skb_batch_size;
+        u16 skb_batch_desc_count;
+        u16 skb_batch_hr_count;
+        u16 skb_batch_pktr_count;
 
         //XXX: The NIC shouldn't track which skbs are using which flows.  This
         // seems like it would be better implemented in the kernel.  I'm going
@@ -1266,4 +1367,5 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
 				  struct ixgbe_ring *tx_ring);
 u32 ixgbe_rss_indir_tbl_entries(struct ixgbe_adapter *adapter);
 void ixgbe_store_reta(struct ixgbe_adapter *adapter);
+int ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size);
 #endif /* _IXGBE_H_ */

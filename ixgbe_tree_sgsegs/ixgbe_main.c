@@ -174,20 +174,25 @@ MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
 
 /* TODO: not including packet headers in this size is probably a mistake.
  * I should think about this more. */
-static int drv_gso_size = 1448;
+int drv_gso_size = 1448;
 module_param(drv_gso_size, uint, 0);
 MODULE_PARM_DESC(drv_gso_size,
                  "Specify the size of segments that the driver should send to the NIC.  Currently does not include packet headers.  Also only applies when the header ring is used.");
 
-static int use_pkt_ring = 0;
+int use_sgseg = 0;
+module_param(use_sgseg, uint, 0);
+MODULE_PARM_DESC(use_sgseg,
+                 "Use s/g segmentation instead of TSO.");
+
+int use_pkt_ring = 0;
 module_param(use_pkt_ring, uint, 0);
 MODULE_PARM_DESC(use_pkt_ring,
-                 "Instead of using the s/g segmentation method, just copy the packet contents into preallocated memory.  Only useful for debugging");
+                 "Instead of using TSO or sgseg, just copy the packet contents into preallocated memory.");
 
 /* Whether xmit batching should be used or not. */
 //TODO: prefetch should apply to the header ring as well as the pkt ring.
 //TODO: Not yet implemented anywhere.
-static int xmit_batch = 0;
+int xmit_batch = 0;
 module_param(xmit_batch, uint, 0);
 MODULE_PARM_DESC(xmit_batch,
                  "Use Gopt style batching to batch segment queuing.");
@@ -5472,6 +5477,9 @@ static int ixgbe_sw_init(struct ixgbe_adapter *adapter)
 	struct tc_configuration *tc;
 #endif
 
+        /* Both cannot be set simultaneously */
+        BUG_ON (use_sgseg && use_pkt_ring);
+
 	/* PCI config space info */
 
 	hw->vendor_id = pdev->vendor;
@@ -5638,9 +5646,11 @@ static int ixgbe_sw_init(struct ixgbe_adapter *adapter)
 	set_bit(0, &adapter->fwd_bitmask);
 	set_bit(__IXGBE_DOWN, &adapter->state);
 
-        /* DEBUG: Note what drv_gso_size is being used. */
+        /* DEBUG: Note what parameters are being used. */
         pr_info ("drv_gso_size: %u\n", drv_gso_size);
         pr_info ("use_pkt_ring: %u\n", use_pkt_ring);
+        pr_info ("use_sgseg: %u\n", use_sgseg);
+        pr_info ("xmit_batch: %u\n", xmit_batch);
 
 	return 0;
 }
@@ -7485,7 +7495,7 @@ static int __ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size)
 	return 0;
 }
 
-static inline int ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size)
+int ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size)
 {
 	if (likely(ixgbe_desc_unused(tx_ring) >= size))
 		return 0;
@@ -9020,51 +9030,23 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
         //pr_info ("ixgbe_xmit_frame_ring: start\n");
         //pr_info (" sk: %p\n", sk);
 
-        // Assume that all current forwarding is SG segmentation.
-        /* need: 3 descriptors per segment
-         *          (+ 1 desc for context descriptor)
-         *          (+ 1 desc for header descriptor)
-         *          (+ 1 desc for data descriptor)
-         *          (?+1 desc if the segment falls on a boundary?)
-         *          (?+more desc if we allow for larger than gso_size
-         *           segments?)
-	 *       + 2 desc gap to keep tail from touching head,
-	 * otherwise try next time
-         */
-        //count = (skb_shinfo(skb)->gso_segs * 3);
-        count = (skb_shinfo(skb)->gso_segs * 4); // For header ring
-        //count = (skb_shinfo(skb)->gso_segs * 3); // For pkt ring
-        //XXX: Can this just be 2 if we're using the pkt header ring?
+
+        /* Get the desciptor count appropriate for the driver config */
+        if (use_sgseg) {
+            count = ixgbe_txd_count_sgsegs(skb);
+        } else if (use_pkt_ring) {
+            count = ixgbe_txd_count_pktring(skb);
+        } else {
+            count = ixgbe_txd_count(skb);
+        }
+
+	/* Maintain a + 2 desc gap to keep tail from touching head */
         count += 2;
+
+        /* Count the number of other ring entries that will be used */
         hr_count = (skb_shinfo(skb)->gso_segs); // -1 if the first packet
                                                 // uses the existing header
         pktr_count = skb_shinfo(skb)->gso_segs;
-
-// Assume that all forwarding is performed by SG segmentation, thus all
-// packets have the requirements of SG segmentation.  This will not always be
-// the case.  Deciding if there are enough descriptors should be decided
-// algorithmically in the future.
-#if 0
-	/*
-	 * need: 1 descriptor per page * PAGE_SIZE/IXGBE_MAX_DATA_PER_TXD,
-	 *       + 1 desc for skb_headlen/IXGBE_MAX_DATA_PER_TXD,
-	 *       + 2 desc gap to keep tail from touching head,
-	 *       + 1 desc for context descriptor,
-         *       (+ 1 desc gap for the header located in the header ring)
-	 * otherwise try next time
-	 */
-        count = TXD_USE_COUNT(skb_headlen(skb));
-	for (f = 0; f < skb_shinfo(skb)->nr_frags; f++)
-		count += TXD_USE_COUNT(skb_shinfo(skb)->frags[f].size);
-        //TODO: Pick this depending on how segments are being generated
-        //count += 3;
-        count += 4; // Include the header ring
-        /* 
-         * need: 1 hr slot per segment for now.
-         * in the future: 1 hr slot per packet in a segment
-         */
-        hr_count = 1;
-#endif
 
 	if (ixgbe_maybe_stop_tx(tx_ring, count)) {
                 pr_info ("ixgbe_xmit_frame_ring: returning NETDEV_TX_BUSY.\n");
@@ -9181,13 +9163,14 @@ xmit_fcoe:
 #endif /* IXGBE_FCOE */
 
         if (tso) {
-            if (use_pkt_ring) {
+            if (use_sgseg) {
+                ixgbe_tx_map_sgsegs(tx_ring, first, hdr_len);
+            } else if (use_pkt_ring) {
                 ixgbe_tx_map_pkt_ring(tx_ring, first, hdr_len);
             } else {
-                ixgbe_tx_map_sgsegs(tx_ring, first, hdr_len);
+                ixgbe_tx_map(tx_ring, first, hdr_len);
             }
         } else {
-            //TODO: This should be decided algorithmically in the future.
             ixgbe_tx_map(tx_ring, first, hdr_len);
             //ixgbe_tx_map_hdr_ring(tx_ring, first, hdr_len);
         }
