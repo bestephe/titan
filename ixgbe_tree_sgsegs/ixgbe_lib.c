@@ -1199,6 +1199,23 @@ void ixgbe_clear_interrupt_scheme(struct ixgbe_adapter *adapter)
 	ixgbe_reset_interrupt_capability(adapter);
 }
 
+void ixgbe_tx_ctxtdesc_ntu(struct ixgbe_ring *tx_ring, u32 vlan_macip_lens,
+		           u32 fcoe_sof_eof, u32 type_tucmd,
+                           u32 mss_l4len_idx, u16 ntu)
+{
+	struct ixgbe_adv_tx_context_desc *context_desc;
+
+	context_desc = IXGBE_TX_CTXTDESC(tx_ring, ntu);
+
+	/* set bits to identify this as an advanced context descriptor */
+	type_tucmd |= IXGBE_TXD_CMD_DEXT | IXGBE_ADVTXD_DTYP_CTXT;
+
+	context_desc->vlan_macip_lens	= cpu_to_le32(vlan_macip_lens);
+	context_desc->seqnum_seed	= cpu_to_le32(fcoe_sof_eof);
+	context_desc->type_tucmd_mlhl	= cpu_to_le32(type_tucmd);
+	context_desc->mss_l4len_idx	= cpu_to_le32(mss_l4len_idx);
+}
+
 void ixgbe_tx_ctxtdesc(struct ixgbe_ring *tx_ring, u32 vlan_macip_lens,
 		       u32 fcoe_sof_eof, u32 type_tucmd, u32 mss_l4len_idx)
 {

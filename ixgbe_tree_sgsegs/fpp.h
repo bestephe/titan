@@ -7,7 +7,6 @@
 #define FPP_EXPENSIVE(x)	{}					// Just a hint
 #define FPP_ISSET(n, i) (n & (1 << i))
 #define FPP_SET(n, i) (n | (1 << i))	// Set the ith bit of n
-#define FPP_ISSET(n, i) (n & (1 << i))
 	
 // Prefetch, Save, and Switch
 //TODO: this should include a prefetch size as well.  I think the default
@@ -20,7 +19,7 @@ do {\
 	goto *batch_rips[I]; \
 } while(0)
 
-//#define foreach(i, n) for(i = 0; i < n; i ++)
+#define foreach(i, n) for(i = 0; i < n; i ++)
 
 //XXX: the kernel already defines get_cycles()
 #if 0

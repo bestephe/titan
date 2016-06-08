@@ -1301,7 +1301,10 @@ void ixgbe_set_rx_mode(struct net_device *netdev);
 void ixgbe_set_rx_drop_en(struct ixgbe_adapter *adapter);
 #endif
 int ixgbe_setup_tc(struct net_device *dev, u8 tc);
+void ixgbe_tx_ctxtdesc_ntu(struct ixgbe_ring *, u32, u32, u32, u32, u16);
 void ixgbe_tx_ctxtdesc(struct ixgbe_ring *, u32, u32, u32, u32);
+u32 ixgbe_tx_cmd_type(struct sk_buff *, u32);
+void ixgbe_tx_olinfo_status(union ixgbe_adv_tx_desc *, u32, unsigned int);
 void ixgbe_do_reset(struct net_device *netdev);
 #ifdef CONFIG_IXGBE_HWMON
 void ixgbe_sysfs_exit(struct ixgbe_adapter *adapter);

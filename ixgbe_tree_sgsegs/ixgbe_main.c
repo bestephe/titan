@@ -7422,7 +7422,7 @@ static void ixgbe_tx_csum(struct ixgbe_ring *tx_ring,
 	 ((u32)(_input & _flag) * (_result / _flag)) : \
 	 ((u32)(_input & _flag) / (_flag / _result)))
 
-static u32 ixgbe_tx_cmd_type(struct sk_buff *skb, u32 tx_flags)
+u32 ixgbe_tx_cmd_type(struct sk_buff *skb, u32 tx_flags)
 {
 	/* set type for advanced descriptor with frame checksum insertion */
 	u32 cmd_type = IXGBE_ADVTXD_DTYP_DATA |
@@ -7447,7 +7447,7 @@ static u32 ixgbe_tx_cmd_type(struct sk_buff *skb, u32 tx_flags)
 	return cmd_type;
 }
 
-static void ixgbe_tx_olinfo_status(union ixgbe_adv_tx_desc *tx_desc,
+void ixgbe_tx_olinfo_status(union ixgbe_adv_tx_desc *tx_desc,
 				   u32 tx_flags, unsigned int paylen)
 {
 	u32 olinfo_status = paylen << IXGBE_ADVTXD_PAYLEN_SHIFT;
@@ -7503,8 +7503,9 @@ int ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size)
 	return __ixgbe_maybe_stop_tx(tx_ring, size);
 }
 
-#define IXGBE_TXD_CMD (IXGBE_TXD_CMD_EOP | \
-		       IXGBE_TXD_CMD_RS)
+//TODO: moved to ixgbe_type.h
+//#define IXGBE_TXD_CMD (IXGBE_TXD_CMD_EOP | \
+//		       IXGBE_TXD_CMD_RS)
 
 static void ixgbe_tx_map(struct ixgbe_ring *tx_ring,
 			 struct ixgbe_tx_buffer *first,

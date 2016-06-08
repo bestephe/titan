@@ -57,16 +57,203 @@
 #include "ixgbe_xmit_batch.h"
 #include "fpp.h"
 
-// batch_index must be declared outside of the xmit functions
-static int batch_index = 0;
-
-static netdev_tx_t ixgbe_xmit_batch_map(struct ixgbe_adapter *adapter,
-                                        struct ixgbe_ring *tx_ring)
+static int ixgbe_tso_batch_safe(struct ixgbe_ring *tx_ring,
+		                struct ixgbe_tx_buffer *first,
+                                u16 desc_i,
+		                u8 *hdr_len)
 {
+	struct sk_buff *skb = first->skb;
+	u32 vlan_macip_lens, type_tucmd;
+	u32 mss_l4len_idx, l4len;
+	int err;
+
+	if (skb->ip_summed != CHECKSUM_PARTIAL)
+		return 0;
+
+	if (!skb_is_gso(skb))
+		return 0;
+
+	err = skb_cow_head(skb, 0);
+	if (err < 0)
+		return err;
+
+	/* ADV DTYP TUCMD MKRLOC/ISCSIHEDLEN */
+	type_tucmd = IXGBE_ADVTXD_TUCMD_L4T_TCP;
+
+	if (first->protocol == htons(ETH_P_IP)) {
+		struct iphdr *iph = ip_hdr(skb);
+		iph->tot_len = 0;
+		iph->check = 0;
+		tcp_hdr(skb)->check = ~csum_tcpudp_magic(iph->saddr,
+							 iph->daddr, 0,
+							 IPPROTO_TCP,
+							 0);
+		type_tucmd |= IXGBE_ADVTXD_TUCMD_IPV4;
+		first->tx_flags |= IXGBE_TX_FLAGS_TSO |
+				   IXGBE_TX_FLAGS_CSUM |
+				   IXGBE_TX_FLAGS_IPV4;
+	} else if (skb_is_gso_v6(skb)) {
+		ipv6_hdr(skb)->payload_len = 0;
+		tcp_hdr(skb)->check =
+		    ~csum_ipv6_magic(&ipv6_hdr(skb)->saddr,
+				     &ipv6_hdr(skb)->daddr,
+				     0, IPPROTO_TCP, 0);
+		first->tx_flags |= IXGBE_TX_FLAGS_TSO |
+				   IXGBE_TX_FLAGS_CSUM;
+	}
+
+	/* compute header lengths */
+	l4len = tcp_hdrlen(skb);
+	*hdr_len = skb_transport_offset(skb) + l4len;
+
+	/* update gso size and bytecount with header size */
+	first->gso_segs = skb_shinfo(skb)->gso_segs;
+	first->bytecount += (first->gso_segs - 1) * *hdr_len;
+
+        //DEBUG: Is gso_segs already set correctly?
+        //pr_info ("gso_segs: %d\n", first->gso_segs);
+
+	/* mss_l4len_id: use 0 as index for TSO */
+	mss_l4len_idx = l4len << IXGBE_ADVTXD_L4LEN_SHIFT;
+	mss_l4len_idx |= skb_shinfo(skb)->gso_size << IXGBE_ADVTXD_MSS_SHIFT;
+
+	/* vlan_macip_lens: HEADLEN, MACLEN, VLAN tag */
+	vlan_macip_lens = skb_network_header_len(skb);
+	vlan_macip_lens |= skb_network_offset(skb) << IXGBE_ADVTXD_MACLEN_SHIFT;
+	vlan_macip_lens |= first->tx_flags & IXGBE_TX_FLAGS_VLAN_MASK;
+
+        /* Use the batch safe version of setting a context descriptor */
+	ixgbe_tx_ctxtdesc_ntu(tx_ring, vlan_macip_lens, 0, type_tucmd,
+			      mss_l4len_idx, desc_i);
+
+        /* update first so that the context descriptor can be recreated. */
+        first->vlan_macip_lens = vlan_macip_lens;
+        first->type_tucmd = type_tucmd;
+        first->mss_l4len_idx = mss_l4len_idx;
+
+	return 1;
+}
+
+static void ixgbe_tx_csum_batch_safe(struct ixgbe_ring *tx_ring,
+			             struct ixgbe_tx_buffer *first,
+                                     u16 desc_i)
+{
+	struct sk_buff *skb = first->skb;
+	u32 vlan_macip_lens = 0;
+	u32 mss_l4len_idx = 0;
+	u32 type_tucmd = 0;
+
+	if (skb->ip_summed != CHECKSUM_PARTIAL) {
+		if (!(first->tx_flags & IXGBE_TX_FLAGS_HW_VLAN) &&
+		    !(first->tx_flags & IXGBE_TX_FLAGS_CC))
+			return;
+		vlan_macip_lens = skb_network_offset(skb) <<
+				  IXGBE_ADVTXD_MACLEN_SHIFT;
+	} else {
+		u8 l4_hdr = 0;
+		union {
+			struct iphdr *ipv4;
+			struct ipv6hdr *ipv6;
+			u8 *raw;
+		} network_hdr;
+		union {
+			struct tcphdr *tcphdr;
+			u8 *raw;
+		} transport_hdr;
+
+		if (skb->encapsulation) {
+			network_hdr.raw = skb_inner_network_header(skb);
+			transport_hdr.raw = skb_inner_transport_header(skb);
+			vlan_macip_lens = skb_inner_network_offset(skb) <<
+					  IXGBE_ADVTXD_MACLEN_SHIFT;
+		} else {
+			network_hdr.raw = skb_network_header(skb);
+			transport_hdr.raw = skb_transport_header(skb);
+			vlan_macip_lens = skb_network_offset(skb) <<
+					  IXGBE_ADVTXD_MACLEN_SHIFT;
+		}
+
+		/* use first 4 bits to determine IP version */
+		switch (network_hdr.ipv4->version) {
+		case IPVERSION:
+			vlan_macip_lens |= transport_hdr.raw - network_hdr.raw;
+			type_tucmd |= IXGBE_ADVTXD_TUCMD_IPV4;
+			l4_hdr = network_hdr.ipv4->protocol;
+			break;
+		case 6:
+			vlan_macip_lens |= transport_hdr.raw - network_hdr.raw;
+			l4_hdr = network_hdr.ipv6->nexthdr;
+			break;
+		default:
+			if (unlikely(net_ratelimit())) {
+				dev_warn(tx_ring->dev,
+					 "partial checksum but version=%d\n",
+					 network_hdr.ipv4->version);
+			}
+		}
+
+		switch (l4_hdr) {
+		case IPPROTO_TCP:
+			type_tucmd |= IXGBE_ADVTXD_TUCMD_L4T_TCP;
+			mss_l4len_idx = (transport_hdr.tcphdr->doff * 4) <<
+					IXGBE_ADVTXD_L4LEN_SHIFT;
+			break;
+		case IPPROTO_SCTP:
+			type_tucmd |= IXGBE_ADVTXD_TUCMD_L4T_SCTP;
+			mss_l4len_idx = sizeof(struct sctphdr) <<
+					IXGBE_ADVTXD_L4LEN_SHIFT;
+			break;
+		case IPPROTO_UDP:
+			mss_l4len_idx = sizeof(struct udphdr) <<
+					IXGBE_ADVTXD_L4LEN_SHIFT;
+			break;
+		default:
+			if (unlikely(net_ratelimit())) {
+				dev_warn(tx_ring->dev,
+				 "partial checksum but l4 proto=%x!\n",
+				 l4_hdr);
+			}
+			break;
+		}
+
+		/* update TX checksum flag */
+		first->tx_flags |= IXGBE_TX_FLAGS_CSUM;
+	}
+
+	/* vlan_macip_lens: MACLEN, VLAN tag */
+	vlan_macip_lens |= first->tx_flags & IXGBE_TX_FLAGS_VLAN_MASK;
+
+	ixgbe_tx_ctxtdesc_ntu(tx_ring, vlan_macip_lens, 0,
+			      type_tucmd, mss_l4len_idx, desc_i);
+}
+
+//TODO: This function is not complete.  I'm going to make sure I can write a
+// correct no-goto version first
+//TODO: the goto version should be easily debugged by removing all calls to
+// FPP_PSS(...).  If this is done, then the batch processing will proceed
+// iteratively, as normal.
+static netdev_tx_t ixgbe_xmit_batch_map(struct ixgbe_adapter *adapter,
+                                             struct ixgbe_ring *tx_ring)
+{
+    /* Local batch variables (ixgbe_xmit_frame_ring). */
+    struct ixgbe_skb_batch_data *_cur_skb_data[IXGBE_MAX_XMIT_BATCH_SIZE];
+    struct ixgbe_tx_buffer *_first[IXGBE_MAX_XMIT_BATCH_SIZE];
+    int _tso[IXGBE_MAX_XMIT_BATCH_SIZE];
+    u32 _tx_flags[IXGBE_MAX_XMIT_BATCH_SIZE];
+    __be16 _protocol[IXGBE_MAX_XMIT_BATCH_SIZE];
+    u16 _desc_i[IXGBE_MAX_XMIT_BATCH_SIZE];
+    u8 _hdr_len[IXGBE_MAX_XMIT_BATCH_SIZE];
+
+    /* Local batch variables (ixgbe_tx_map) */
+    struct ixgbe_tx_buffer *_tx_buffer[IXGBE_MAX_XMIT_BATCH_SIZE];
+    union ixgbe_adv_tx_desc *_tx_desc[IXGBE_MAX_XMIT_BATCH_SIZE];
+    struct skb_frag_struct *_frag[IXGBE_MAX_XMIT_BATCH_SIZE];
+    dma_addr_t _dma[IXGBE_MAX_XMIT_BATCH_SIZE];
+    unsigned int _data_len[IXGBE_MAX_XMIT_BATCH_SIZE];
+    unsigned int _size[IXGBE_MAX_XMIT_BATCH_SIZE];
+    u32 _cmd_type[IXGBE_MAX_XMIT_BATCH_SIZE];
+
     /* G-opt style (FPP) prefetching variables */
-    int i[IXGBE_MAX_XMIT_BATCH_SIZE];
-    struct ixgbe_skb_batch_data *cur_skb_data[IXGBE_MAX_XMIT_BATCH_SIZE];
-    struct ixgbe_tx_buffer *first[IXGBE_MAX_XMIT_BATCH_SIZE];
     int I = 0;  // batch index
     void *batch_rips[IXGBE_MAX_XMIT_BATCH_SIZE];
     u64 iMask = 0;
@@ -78,17 +265,212 @@ static netdev_tx_t ixgbe_xmit_batch_map(struct ixgbe_adapter *adapter,
     for (temp_index = 0; temp_index < tx_ring->skb_batch_size; temp_index++) {
         batch_rips[temp_index] = &&map_fpp_start;
     }
-
 map_fpp_start:
 
-    cur_skb_data[I] = &tx_ring->skb_batch[I];
+    //TODO: prefetch
+    /* Init local variables */
+    _cur_skb_data[I] = &tx_ring->skb_batch[I];
+    _tx_flags[I] = 0;
+    _protocol[I] = _cur_skb_data[I]->skb->protocol;
+    _desc_i[I] = _cur_skb_data[I]->desc_ftu;
+    _hdr_len[I] = 0;
 
-    for (i[I] = 0; i[I] < tx_ring->skb_batch_size; i[I]++) {
-        FPP_PSS(cur_skb_data[I], map_fpp_label_1, tx_ring->skb_batch_size);
-map_fpp_label_1:
+    //TODO: prefetch
+    _first[I] = &tx_ring->tx_buffer_info[_desc_i[I]];
+    _first[I]->skb = _cur_skb_data[I]->skb;
+    _first[I]->bytecount = _cur_skb_data[I]->skb->len;
+    _first[I]->gso_segs = 1;
+    _first[I]->hr_i_valid = false;
+    _first[I]->pktr_i_valid = false;
 
-        first[I] = &tx_ring->tx_buffer_info[cur_skb_data[I]->desc_ftu];
+    //TODO: prefetch
+    if (skb_vlan_tag_present(_cur_skb_data[I]->skb)) {
+        /* TODO: support more features later once I've actually proved this helps */
+        BUG ();
+    } else if (_protocol[I] == htons(ETH_P_8021Q)) {
+        /* TODO: support more features later once I've actually proved this helps */
+        BUG ();
     }
+
+    //TODO: prefetch
+    _protocol[I] = vlan_get_protocol(_cur_skb_data[I]->skb);
+
+    if (unlikely(skb_shinfo(_cur_skb_data[I]->skb)->tx_flags & SKBTX_HW_TSTAMP) &&
+        adapter->ptp_clock &&
+        !test_and_set_bit_lock(__IXGBE_PTP_TX_IN_PROGRESS,
+                               &adapter->state)) {
+        /* TODO: support more features later once I've actually proved this helps */
+        BUG ();
+    }
+
+    skb_tx_timestamp(_cur_skb_data[I]->skb);
+
+#ifdef CONFIG_PCI_IOV
+    /*
+     * Use the l2switch_enable flag - would be false if the DMA
+     * Tx switch had been disabled.
+     */
+    if (adapter->flags & IXGBE_FLAG_SRIOV_ENABLED)
+            _tx_flags[I] |= IXGBE_TX_FLAGS_CC;
+
+#endif
+
+    /* DCB maps skb priorities 0-7 onto 3 bit PCP of VLAN tag. */
+    //XXX: This code has never been tested
+    if ((adapter->flags & IXGBE_FLAG_DCB_ENABLED) &&
+        ((_tx_flags[I] & (IXGBE_TX_FLAGS_HW_VLAN | IXGBE_TX_FLAGS_SW_VLAN)) ||
+         (_cur_skb_data[I]->skb->priority != TC_PRIO_CONTROL))) {
+            _tx_flags[I] &= ~IXGBE_TX_FLAGS_VLAN_PRIO_MASK;
+            _tx_flags[I] |= (_cur_skb_data[I]->skb->priority & 0x7) <<
+                                    IXGBE_TX_FLAGS_VLAN_PRIO_SHIFT;
+            if (_tx_flags[I] & IXGBE_TX_FLAGS_SW_VLAN) {
+                    struct vlan_ethhdr *vhdr;
+
+                    if (skb_cow_head(_cur_skb_data[I]->skb, 0))
+                            BUG (); // Figure out how to implement "goto out_drop;" later
+                    vhdr = (struct vlan_ethhdr *)_cur_skb_data[I]->skb->data;
+                    vhdr->h_vlan_TCI = htons(_tx_flags[I] >>
+                                             IXGBE_TX_FLAGS_VLAN_SHIFT);
+            } else {
+                    _tx_flags[I] |= IXGBE_TX_FLAGS_HW_VLAN;
+            }
+    }
+
+    /* record initial flags and protocol */
+    _first[I]->tx_flags = _tx_flags[I];
+    _first[I]->protocol = _protocol[I];
+
+#ifdef IXGBE_FCOE
+    /* TODO: support more features later once I've actually proved this helps */
+    BUG ();
+#endif /* IXGBE_FCOE */
+
+    //TODO: prefetch
+    _tso[I] = ixgbe_tso_batch_safe(tx_ring, _first[I], _desc_i[I], &_hdr_len[I]);
+    if (_tso[I] < 0) {
+	dev_kfree_skb_any(_first[I]->skb);
+	_first[I]->skb = NULL;
+        //TODO: In this case, we need to make sure that all of the allocated
+        // descriptors are set correctly for 0-byte segments.
+        BUG ();
+        goto map_fpp_end;
+    } else if (!_tso[I]) {
+        ixgbe_tx_csum_batch_safe(tx_ring, _first[I], _desc_i[I]);
+    }
+
+    /* Track that we have use a descriptor as a context descriptor */
+    _desc_i[I]++;
+    _desc_i[I] = (_desc_i[I] < tx_ring->count) ? _desc_i[I] : 0;
+
+    /* 
+     * Map the skb fragments and create data descriptors.
+     *  This code is mostly copy/pasted from ixgbe_tx_map(...).
+     */
+
+    /* Init mapping variables */
+    /* Note: Above functions add in more data to _first[I]->tx_flags */
+    _tx_flags[I] = _first[I]->tx_flags;
+    _cmd_type[I] = ixgbe_tx_cmd_type(_cur_skb_data[I]->skb, _tx_flags[I]);
+    _tx_desc[I] = IXGBE_TX_DESC(tx_ring, _desc_i[I]);
+
+    ixgbe_tx_olinfo_status(_tx_desc[I], _tx_flags[I],
+        _cur_skb_data[I]->skb->len - _hdr_len[I]);
+
+    _size[I] = skb_headlen(_cur_skb_data[I]->skb);
+    _data_len[I] = _cur_skb_data[I]->skb->data_len;
+
+#ifdef IXGBE_FCOE
+    BUG ();
+#endif
+
+    _dma[I] = dma_map_single(tx_ring->dev, _cur_skb_data[I]->skb->data,
+        _size[I], DMA_TO_DEVICE);
+
+    _tx_buffer[I] = _first[I];
+
+    for (_frag[I] = &skb_shinfo(_cur_skb_data[I]->skb)->frags[0];; _frag[I]++) {
+            if (dma_mapping_error(tx_ring->dev, _dma[I])) {
+                pr_info ("Mapping errors haven't been handled yet. Panicing\n");
+                BUG ();
+            }
+
+            /* record length, and DMA address */
+            dma_unmap_len_set(_tx_buffer[I], len, _size[I]);
+            dma_unmap_addr_set(_tx_buffer[I], dma, _dma[I]);
+
+            _tx_desc[I]->read.buffer_addr = cpu_to_le64(_dma[I]);
+
+            while (unlikely(_size[I] > IXGBE_MAX_DATA_PER_TXD)) {
+                    _tx_desc[I]->read.cmd_type_len =
+                            cpu_to_le32(_cmd_type[I] ^ IXGBE_MAX_DATA_PER_TXD);
+
+                    _desc_i[I]++;
+                    _tx_desc[I]++;
+                    if (_desc_i[I] == tx_ring->count) {
+                            _tx_desc[I] = IXGBE_TX_DESC(tx_ring, 0);
+                            _desc_i[I] = 0;
+                    }
+                    _tx_desc[I]->read.olinfo_status = 0;
+
+                    _dma[I] += IXGBE_MAX_DATA_PER_TXD;
+                    _size[I] -= IXGBE_MAX_DATA_PER_TXD;
+
+                    _tx_desc[I]->read.buffer_addr = cpu_to_le64(_dma[I]);
+            }
+
+            if (likely(!_data_len[I]))
+                    break;
+
+            _tx_desc[I]->read.cmd_type_len = cpu_to_le32(_cmd_type[I] ^ _size[I]);
+
+            _desc_i[I]++;
+            _tx_desc[I]++;
+            if (_desc_i[I] == tx_ring->count) {
+                    _tx_desc[I] = IXGBE_TX_DESC(tx_ring, 0);
+                    _desc_i[I] = 0;
+            }
+            _tx_desc[I]->read.olinfo_status = 0;
+
+#ifdef IXGBE_FCOE
+            _size[I] = min_t(unsigned int, _data_len[I], skb_frag_size(_frag[I]));
+#else
+            _size[I] = skb_frag_size(_frag[I]);
+#endif
+            _data_len[I] -= _size[I];
+
+            _dma[I] = skb_frag_dma_map(tx_ring->dev, _frag[I], 0, _size[I],
+                                   DMA_TO_DEVICE);
+
+            _tx_buffer[I] = &tx_ring->tx_buffer_info[_desc_i[I]];
+    }
+
+    /* write last descriptor with RS and EOP bits */
+    _cmd_type[I] |= _size[I] | IXGBE_TXD_CMD;
+    _tx_desc[I]->read.cmd_type_len = cpu_to_le32(_cmd_type[I]);
+
+    netdev_tx_sent_queue(txring_txq(tx_ring), _first[I]->bytecount);
+
+    /* set the timestamp */
+    _first[I]->time_stamp = jiffies;
+
+    /*
+     * Force memory writes to complete before letting h/w know there
+     * are new descriptors to fetch.  (Only applicable for weak-ordered
+     * memory model archs, such as IA-64).
+     *
+     * We also need this memory barrier to make certain all of the
+     * status bits have been updated before next_to_watch is written.
+     */
+    wmb();
+
+    /* set next_to_watch value indicating a packet is present */
+    _first[I]->next_to_watch = _tx_desc[I];
+
+    /* Assert we used the correct number of descriptors */
+    _desc_i[I]++;
+    if (_desc_i[I] == tx_ring->count)
+            _desc_i[I] = 0;
+    BUG_ON (_desc_i[I] != ((_cur_skb_data[I]->desc_ftu + _cur_skb_data[I]->desc_count) % tx_ring->count));
 
 map_fpp_end:
     batch_rips[I] = &&map_fpp_end;
@@ -100,6 +482,19 @@ map_fpp_end:
     goto *batch_rips[I];
 
 }
+
+#if 0
+// batch_index must be declared outside of the xmit functions
+static int batch_index = 0;
+
+static netdev_tx_t ixgbe_xmit_batch_map_nogoto(struct ixgbe_adapter *adapter,
+                                             struct ixgbe_ring *tx_ring)
+{
+    foreach (batch_index, tx_ring->skb_batch_size) {
+        
+    }
+}
+#endif
 
 static netdev_tx_t ixgbe_xmit_batch_purge(struct ixgbe_adapter *adapter,
                                           struct ixgbe_ring *tx_ring)
@@ -118,8 +513,17 @@ static netdev_tx_t ixgbe_xmit_batch_purge(struct ixgbe_adapter *adapter,
         //TODO
         BUG ();
     } else {
+        //ret = ixgbe_xmit_batch_map_nogoto(adapter, tx_ring);
         ret = ixgbe_xmit_batch_map(adapter, tx_ring);
     }
+
+    /* Write the tail pointer to the NIC */
+    writel(tx_ring->next_to_use, tx_ring->tail);
+
+    /* we need this if more than one processor can write to our tail
+     * at a time, it synchronizes IO on IA64/Altix systems
+     */
+    mmiowb();
 
     /* Reset the batch variables. */
     tx_ring->skb_batch_size = 0;
