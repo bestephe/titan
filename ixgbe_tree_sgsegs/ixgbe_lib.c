@@ -1199,6 +1199,51 @@ void ixgbe_clear_interrupt_scheme(struct ixgbe_adapter *adapter)
 	ixgbe_reset_interrupt_capability(adapter);
 }
 
+void ixgbe_tx_nulldesc(struct ixgbe_ring *tx_ring, u16 desc_i)
+{
+	union ixgbe_adv_tx_desc *tx_desc;
+
+        /* IXGBE_ADVTXD_DCMD_RS is ignored in null descriptors. Set it
+         * anyways? */
+        u32 cmd_type = IXGBE_ADVTXD_DTYP_DATA |
+                       IXGBE_ADVTXD_DCMD_DEXT |
+                       IXGBE_ADVTXD_DCMD_EOP |
+                       IXGBE_ADVTXD_DCMD_RS |
+                       IXGBE_ADVTXD_DCMD_IFCS;
+
+        tx_desc = IXGBE_TX_DESC(tx_ring, desc_i);
+
+        tx_desc->read.buffer_addr = cpu_to_le64(0);
+        tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type);
+        tx_desc->read.olinfo_status = cpu_to_le32(0);
+}
+
+int ixgbe_is_tx_nulldesc(union ixgbe_adv_tx_desc *tx_desc)
+{
+        /* This function could check things about cmd_type, but no valid
+         * descriptor should ever have a buffer addr of zero, so the current
+         * assertion should suffice. */
+
+        //XXX: DEBUG
+        //pr_info ("ixgbe_is_tx_nulldesc:\n");
+        //pr_info (" buffer_addr: %llu, olinfo_status: %u\n",
+        //         tx_desc->read.buffer_addr, tx_desc->read.olinfo_status);
+
+        /* olinfo_status can actually get the DD bit set, despite what the
+         * datasheet says.  This makes this code incorrect.  Again, more could
+         * be asserted about what olinfo_status looks like, but no valid
+         * descriptor should ever have a buffer_addr of 0, so I think we should
+         * be fine for now. */
+        //if (tx_desc->read.buffer_addr == cpu_to_le64(0) &&
+        //    tx_desc->read.olinfo_status == cpu_to_le32(0))
+        //        return 1;
+
+        if (tx_desc->read.buffer_addr == cpu_to_le64(0))
+                return 1;
+
+        return 0;
+}
+
 void ixgbe_tx_ctxtdesc_ntu(struct ixgbe_ring *tx_ring, u32 vlan_macip_lens,
 		           u32 fcoe_sof_eof, u32 type_tucmd,
                            u32 mss_l4len_idx, u16 ntu)

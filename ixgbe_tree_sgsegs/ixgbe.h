@@ -206,8 +206,8 @@ struct ixgbe_pkt_hdr {
 //reasonable value of this should be.
 //TODO: perhaps current batch size should be a module parameter to make
 //measurement easier.
-#define IXGBE_MAX_XMIT_BATCH_SIZE           (16)
-#define IXGBE_MAX_XMIT_BATCH_SIZE_          (15)
+#define IXGBE_MAX_XMIT_BATCH_SIZE           (8)
+#define IXGBE_MAX_XMIT_BATCH_SIZE_          (7)
 
 /* Module parameters accessed by ixgbe_xmit_batch.c */
 extern int drv_gso_size;
@@ -218,9 +218,17 @@ extern int xmit_batch;
 static inline u16 ixgbe_txd_count(struct sk_buff *skb)
 {
 	unsigned short f;
-        u16 count = 0;
 
-        count = TXD_USE_COUNT(skb_headlen(skb));
+	/*
+	 * need: 1 descriptor per page * PAGE_SIZE/IXGBE_MAX_DATA_PER_TXD,
+	 *       + 1 desc for skb_headlen/IXGBE_MAX_DATA_PER_TXD,
+	 *       + 2 desc gap to keep tail from touching head,
+	 *       + 1 desc for context descriptor,
+	 * otherwise try next time
+	 */
+        u16 count = 1;
+
+        count += TXD_USE_COUNT(skb_headlen(skb));
 	for (f = 0; f < skb_shinfo(skb)->nr_frags; f++)
 		count += TXD_USE_COUNT(skb_shinfo(skb)->frags[f].size);
 
@@ -304,6 +312,10 @@ struct ixgbe_tx_buffer {
         bool pktr_i_valid;
         ssize_t pktr_i;
 
+        /* Used to inform ixgbe_clean_tx_irq about null descriptors so that it
+         * can correctly find the next ixgbe_tx_buffer */
+        u16 null_desc_count;
+
         // Use for mapping all of the DMA segments of an skb in a batch
         // because they will all eventually be used.  This is wasteful of
         // memory because this will only ever be used in the "first" tx_buffer
@@ -351,6 +363,8 @@ static inline void ixgbe_tx_buffer_clean(struct ixgbe_tx_buffer *tx_buffer)
         tx_buffer->pktr_i = -1;
         tx_buffer->pktr_i_valid = false;
         //tx_buffer->sk_tbl_item = NULL;
+
+        tx_buffer->null_desc_count = 0;
 }
 
 struct ixgbe_rx_buffer {
@@ -440,6 +454,8 @@ struct ixgbe_sk_tbl_item {
 };
 #endif
 
+#define IXGBE_MAX_BATCH_SIZE_STATS      (1024 * 256)
+
 struct ixgbe_ring {
 	struct ixgbe_ring *next;	/* pointer to next ring in q_vector */
 	struct ixgbe_q_vector *q_vector; /* backpointer to host q_vector */
@@ -494,6 +510,11 @@ struct ixgbe_ring {
         u16 skb_batch_desc_count;
         u16 skb_batch_hr_count;
         u16 skb_batch_pktr_count;
+
+        //XXX: DEBUG: Check the batch sizes
+        u8 skb_batch_size_stats[IXGBE_MAX_BATCH_SIZE_STATS];
+        u64 skb_batch_size_stats_count;
+        u64 skb_batch_size_of_one_stats;
 
         //XXX: The NIC shouldn't track which skbs are using which flows.  This
         // seems like it would be better implemented in the kernel.  I'm going
@@ -1301,10 +1322,13 @@ void ixgbe_set_rx_mode(struct net_device *netdev);
 void ixgbe_set_rx_drop_en(struct ixgbe_adapter *adapter);
 #endif
 int ixgbe_setup_tc(struct net_device *dev, u8 tc);
+void ixgbe_tx_nulldesc(struct ixgbe_ring *, u16);
+int ixgbe_is_tx_nulldesc(union ixgbe_adv_tx_desc *tx_desc);
 void ixgbe_tx_ctxtdesc_ntu(struct ixgbe_ring *, u32, u32, u32, u32, u16);
 void ixgbe_tx_ctxtdesc(struct ixgbe_ring *, u32, u32, u32, u32);
 u32 ixgbe_tx_cmd_type(struct sk_buff *, u32);
 void ixgbe_tx_olinfo_status(union ixgbe_adv_tx_desc *, u32, unsigned int);
+void ixgbe_atr(struct ixgbe_ring *, struct ixgbe_tx_buffer *);
 void ixgbe_do_reset(struct net_device *netdev);
 #ifdef CONFIG_IXGBE_HWMON
 void ixgbe_sysfs_exit(struct ixgbe_adapter *adapter);

@@ -122,6 +122,13 @@ static int ixgbe_tso_batch_safe(struct ixgbe_ring *tx_ring,
 	vlan_macip_lens |= skb_network_offset(skb) << IXGBE_ADVTXD_MACLEN_SHIFT;
 	vlan_macip_lens |= first->tx_flags & IXGBE_TX_FLAGS_VLAN_MASK;
 
+        //XXX: DEBUG
+        //pr_info ("ixgbe_tso_batch_safe:\n");
+        //pr_info (" vlan_macip_lens: %d\n", vlan_macip_lens);
+        //pr_info (" type_tucmd: %d\n", type_tucmd);
+        //pr_info (" mss_l4len_idx: %d\n", mss_l4len_idx);
+        //pr_info (" desc_i: %d\n", desc_i);
+
         /* Use the batch safe version of setting a context descriptor */
 	ixgbe_tx_ctxtdesc_ntu(tx_ring, vlan_macip_lens, 0, type_tucmd,
 			      mss_l4len_idx, desc_i);
@@ -134,7 +141,7 @@ static int ixgbe_tso_batch_safe(struct ixgbe_ring *tx_ring,
 	return 1;
 }
 
-static void ixgbe_tx_csum_batch_safe(struct ixgbe_ring *tx_ring,
+static int ixgbe_tx_csum_batch_safe(struct ixgbe_ring *tx_ring,
 			             struct ixgbe_tx_buffer *first,
                                      u16 desc_i)
 {
@@ -146,7 +153,7 @@ static void ixgbe_tx_csum_batch_safe(struct ixgbe_ring *tx_ring,
 	if (skb->ip_summed != CHECKSUM_PARTIAL) {
 		if (!(first->tx_flags & IXGBE_TX_FLAGS_HW_VLAN) &&
 		    !(first->tx_flags & IXGBE_TX_FLAGS_CC))
-			return;
+			return 0;
 		vlan_macip_lens = skb_network_offset(skb) <<
 				  IXGBE_ADVTXD_MACLEN_SHIFT;
 	} else {
@@ -223,12 +230,19 @@ static void ixgbe_tx_csum_batch_safe(struct ixgbe_ring *tx_ring,
 	/* vlan_macip_lens: MACLEN, VLAN tag */
 	vlan_macip_lens |= first->tx_flags & IXGBE_TX_FLAGS_VLAN_MASK;
 
+        //XXX: DEBUG
+        //pr_info ("ixgbe_tx_csum_batch_safe:\n");
+        //pr_info (" vlan_macip_lens: %d\n", vlan_macip_lens);
+        //pr_info (" type_tucmd: %d\n", type_tucmd);
+        //pr_info (" mss_l4len_idx: %d\n", mss_l4len_idx);
+        //pr_info (" desc_i: %d\n", desc_i);
+
 	ixgbe_tx_ctxtdesc_ntu(tx_ring, vlan_macip_lens, 0,
 			      type_tucmd, mss_l4len_idx, desc_i);
+
+        return 1;
 }
 
-//TODO: This function is not complete.  I'm going to make sure I can write a
-// correct no-goto version first
 //TODO: the goto version should be easily debugged by removing all calls to
 // FPP_PSS(...).  If this is done, then the batch processing will proceed
 // iteratively, as normal.
@@ -239,9 +253,11 @@ static netdev_tx_t ixgbe_xmit_batch_map(struct ixgbe_adapter *adapter,
     struct ixgbe_skb_batch_data *_cur_skb_data[IXGBE_MAX_XMIT_BATCH_SIZE];
     struct ixgbe_tx_buffer *_first[IXGBE_MAX_XMIT_BATCH_SIZE];
     int _tso[IXGBE_MAX_XMIT_BATCH_SIZE];
+    int _csum[IXGBE_MAX_XMIT_BATCH_SIZE];
     u32 _tx_flags[IXGBE_MAX_XMIT_BATCH_SIZE];
     __be16 _protocol[IXGBE_MAX_XMIT_BATCH_SIZE];
     u16 _desc_i[IXGBE_MAX_XMIT_BATCH_SIZE];
+    u16 _quit_desc[IXGBE_MAX_XMIT_BATCH_SIZE];
     u8 _hdr_len[IXGBE_MAX_XMIT_BATCH_SIZE];
 
     /* Local batch variables (ixgbe_tx_map) */
@@ -285,8 +301,8 @@ map_fpp_start:
 
     //TODO: prefetch
     if (skb_vlan_tag_present(_cur_skb_data[I]->skb)) {
-        /* TODO: support more features later once I've actually proved this helps */
-        BUG ();
+        _tx_flags[I] |= skb_vlan_tag_get(_cur_skb_data[I]->skb) << IXGBE_TX_FLAGS_VLAN_SHIFT;
+        _tx_flags[I] |= IXGBE_TX_FLAGS_HW_VLAN;
     } else if (_protocol[I] == htons(ETH_P_8021Q)) {
         /* TODO: support more features later once I've actually proved this helps */
         BUG ();
@@ -342,11 +358,12 @@ map_fpp_start:
 
 #ifdef IXGBE_FCOE
     /* TODO: support more features later once I've actually proved this helps */
-    BUG ();
+    //BUG ();
 #endif /* IXGBE_FCOE */
 
     //TODO: prefetch
     _tso[I] = ixgbe_tso_batch_safe(tx_ring, _first[I], _desc_i[I], &_hdr_len[I]);
+    _csum[I] = 0;
     if (_tso[I] < 0) {
 	dev_kfree_skb_any(_first[I]->skb);
 	_first[I]->skb = NULL;
@@ -355,12 +372,20 @@ map_fpp_start:
         BUG ();
         goto map_fpp_end;
     } else if (!_tso[I]) {
-        ixgbe_tx_csum_batch_safe(tx_ring, _first[I], _desc_i[I]);
+        _csum[I] = ixgbe_tx_csum_batch_safe(tx_ring, _first[I], _desc_i[I]);
     }
 
     /* Track that we have use a descriptor as a context descriptor */
-    _desc_i[I]++;
-    _desc_i[I] = (_desc_i[I] < tx_ring->count) ? _desc_i[I] : 0;
+    //XXX: Only if we actually created a context descriptor, which is apparently optional. */
+    if (_tso[I] || _csum[I]) {
+        _desc_i[I]++;
+        _desc_i[I] = (_desc_i[I] < tx_ring->count) ? _desc_i[I] : 0;
+    }
+
+    /* add the ATR filter if ATR is on */
+    if (test_bit(__IXGBE_TX_FDIR_INIT_DONE, &tx_ring->state)) {
+        ixgbe_atr(tx_ring, _first[I]);
+    }
 
     /* 
      * Map the skb fragments and create data descriptors.
@@ -380,7 +405,8 @@ map_fpp_start:
     _data_len[I] = _cur_skb_data[I]->skb->data_len;
 
 #ifdef IXGBE_FCOE
-    BUG ();
+    /* TODO: support more features later once I've actually proved this helps */
+    //BUG ();
 #endif
 
     _dma[I] = dma_map_single(tx_ring->dev, _cur_skb_data[I]->skb->data,
@@ -464,13 +490,45 @@ map_fpp_start:
     wmb();
 
     /* set next_to_watch value indicating a packet is present */
+    /* This code is a little subtle because DD will not be set on data
+     * descriptors of length 0 (null descriptors).  Because of this,
+     * next_to_watch needs to be the last non-null data descriptor.  However,
+     * ixgbe_clean_tx_irq needs to be able to find the next non-null context or
+     * data descriptor again because DD will not be set on null data
+     * descriptors. */
     _first[I]->next_to_watch = _tx_desc[I];
 
-    /* Assert we used the correct number of descriptors */
+    /* Move to the next descriptor */
     _desc_i[I]++;
     if (_desc_i[I] == tx_ring->count)
             _desc_i[I] = 0;
+
+    /* If there are any unused descriptors, count them and make sure they are
+     * null data descriptors. */
+    BUG_ON (_first[I]->null_desc_count != 0);
+    _quit_desc[I] = ((_cur_skb_data[I]->desc_ftu + 
+                      _cur_skb_data[I]->desc_count) % 
+                     tx_ring->count);
+    while (_desc_i[I] != _quit_desc[I]) {
+        //pr_info(" nulldesc i: %d\n", _desc_i[I]);
+        ixgbe_tx_nulldesc(tx_ring, _desc_i[I]);
+        _first[I]->null_desc_count++;
+        _desc_i[I]++;
+    }
+
+    //XXX: DEBUG
+    //pr_info ("ixgbe_xmit_batch_map:\n");
+    //pr_info (" null_desc_count: %d\n", _first[I]->null_desc_count);
+    //pr_info (" ntu _desc_i[I]: %d\n", _desc_i[I]);
+
+#if 0
+    /* Assert we used the correct number of descriptors */
+    pr_info ("_desc_i[I]: %d\n", _desc_i[I]);
+    pr_info ("desc_ftu: %d\n", _cur_skb_data[I]->desc_ftu);
+    pr_info ("desc_count: %d\n", _cur_skb_data[I]->desc_count);
+    pr_info ("expected count: %d\n", ((_cur_skb_data[I]->desc_ftu + _cur_skb_data[I]->desc_count) % tx_ring->count));
     BUG_ON (_desc_i[I] != ((_cur_skb_data[I]->desc_ftu + _cur_skb_data[I]->desc_count) % tx_ring->count));
+#endif
 
 map_fpp_end:
     batch_rips[I] = &&map_fpp_end;
@@ -504,6 +562,17 @@ static netdev_tx_t ixgbe_xmit_batch_purge(struct ixgbe_adapter *adapter,
     /* Quit early if there are no skb's */
     if (tx_ring->skb_batch_size == 0)
         return NETDEV_TX_OK;
+
+    //pr_info ("ixgbe_xmit_batch_purge:\n");
+
+    //XXX: DEBUG: Track the batch sizes
+    if (tx_ring->skb_batch_size_stats_count < IXGBE_MAX_BATCH_SIZE_STATS) {
+        //pr_info ("Updating batch size stats...\n");
+        if (tx_ring->skb_batch_size > 1)
+            tx_ring->skb_batch_size_stats[tx_ring->skb_batch_size_stats_count++] = tx_ring->skb_batch_size;
+        else
+            tx_ring->skb_batch_size_of_one_stats++;
+    }
 
     /* Use the appropriate batched code for this driver configuration */
     if (use_sgseg) {
@@ -598,7 +667,8 @@ netdev_tx_t ixgbe_xmit_frame_ring_batch(struct sk_buff *skb,
     skb_batch_data = &tx_ring->skb_batch[tx_ring->skb_batch_size];
     tx_ring->skb_batch_size++;
 
-    /* Save per-skb metadata and update the descriptor rings. */
+    /* Save the skb and per-skb metadata and update the descriptor rings. */
+    skb_batch_data->skb = skb;
     skb_batch_data->desc_count = skb_desc_count;
     skb_batch_data->desc_ftu = tx_ring->next_to_use;
     tx_ring->skb_batch_desc_count += skb_desc_count;
@@ -621,8 +691,11 @@ netdev_tx_t ixgbe_xmit_frame_ring_batch(struct sk_buff *skb,
     /* Check if the batch should be sent now or not. */
     //TODO: if we think that the next skb will cause us to be over the limit,
     // we should send the batch now.
-    if (!skb->xmit_more || ixgbe_maybe_stop_tx(tx_ring, DESC_NEEDED)) {
+    if (!skb->xmit_more || ixgbe_maybe_stop_tx(tx_ring, DESC_NEEDED) ||
+            tx_ring->skb_batch_size == IXGBE_MAX_XMIT_BATCH_SIZE) {
+
         /* Purge the current batch */
+        //pr_info ("Purging a batch of size %u\n", tx_ring->skb_batch_size);
         purge_ret = ixgbe_xmit_batch_purge(adapter, tx_ring);
         BUG_ON (purge_ret != NETDEV_TX_OK);
     }

@@ -53,6 +53,11 @@
 #include <scsi/fc/fc_fcoe.h>
 #include <net/vxlan.h>
 
+//XXX: DEBUG: for /proc
+#include <linux/fs.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+
 #ifdef CONFIG_OF
 #include <linux/of_net.h>
 #endif
@@ -211,6 +216,48 @@ MODULE_AUTHOR("Intel Corporation, <linux.nics@intel.com>");
 MODULE_DESCRIPTION("Intel(R) 10 Gigabit PCI Express Network Driver");
 MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
+
+//XXX: DEBUG
+/* Functions for a simple /proc file for exporting batch data to userspace */
+static int
+ixgbe_batch_stats_proc_show(struct seq_file *seq, void *v)
+{
+    struct net_device *netdev = seq->private;
+    struct ixgbe_adapter *adapter = netdev_priv(netdev);
+    int i, j;
+
+    for (i = 0; i < adapter->num_tx_queues; i++) {
+        /* Print stats. */
+        pr_info ("tx_queue_%d stats_count: %u\n", i,
+                 adapter->tx_ring[i]->skb_batch_size_stats_count);
+        for (j = 0; j < adapter->tx_ring[i]->skb_batch_size_stats_count; j++) {
+            seq_printf (seq, "- tx_queue_%d_batch: %u\n", i, adapter->tx_ring[i]->skb_batch_size_stats[j]);
+        }
+        seq_printf (seq, "- tx_queue_%d_batch_of_one: %llu\n", i,  adapter->tx_ring[i]->skb_batch_size_of_one_stats);
+
+        /* Reset stats. */
+        /* Resetting doesn't seem to work properly right now. */
+        //pr_info ("resetting stats...\n");
+        //adapter->tx_ring[i]->skb_batch_size_stats_count = 0;
+        //adapter->tx_ring[i]->skb_batch_size_of_one_stats = 0;
+    }
+
+    return 0;
+}
+
+static int
+ixgbe_batch_stats_proc_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, ixgbe_batch_stats_proc_show, PDE_DATA(inode));
+}
+
+static const struct file_operations ixgbe_batch_stats_proc_fops = {
+    .owner      = THIS_MODULE,
+    .open       = ixgbe_batch_stats_proc_open,
+    .read       = seq_read,
+    .llseek     = seq_lseek,
+    .release    = single_release,
+};
 
 static bool ixgbe_check_cfg_remove(struct ixgbe_hw *hw, struct pci_dev *pdev);
 
@@ -1143,6 +1190,9 @@ static void ixgbe_tx_timeout_reset(struct ixgbe_adapter *adapter)
  * @q_vector: structure containing interrupt and ring information
  * @tx_ring: tx ring to clean
  **/
+//TODO: These chipsets allow for descriptor write back to take place in
+// a different location in memory.  This should be better than currently
+// relying on the DD bit.
 static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 			       struct ixgbe_ring *tx_ring)
 {
@@ -1153,6 +1203,7 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 	unsigned int budget = q_vector->tx.work_limit;
 	unsigned int i = tx_ring->next_to_clean;
         unsigned int frag_i;
+        u16 null_desc_count;
 
 	if (test_bit(__IXGBE_DOWN, &adapter->state))
 		return true;
@@ -1167,6 +1218,10 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 		/* if next_to_watch is not set then there is no work pending */
 		if (!eop_desc)
 			break;
+
+                //XXX: DEBUG
+                //pr_info ("ixgbe_clean_tx_irq:\n");
+                //pr_info (" eop_desc (next_to_watch): %p\n", eop_desc);
 
 		/* prevent any other reads prior to eop_desc */
 		read_barrier_depends();
@@ -1262,6 +1317,11 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
                         tx_ring->pktr_next_to_clean = 0;
                 }
 
+                /* Remember how many null descriptors need to be skipped
+                 * before cleaning the tx_buffer. */
+                null_desc_count = tx_buffer->null_desc_count;
+                //pr_info (" null_desc_count: %d\n", null_desc_count);
+
 		/* clear tx_buffer data */
                 ixgbe_tx_buffer_clean(tx_buffer);
 
@@ -1321,7 +1381,8 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
                         ixgbe_tx_buffer_clean(tx_buffer);
 		}
 
-		/* move us one more past the eop_desc for start of next pkt */
+                /* move us one more past the eop_desc for start of next
+                 * pkt */
 		tx_buffer++;
 		tx_desc++;
 		i++;
@@ -1330,6 +1391,33 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 			tx_buffer = tx_ring->tx_buffer_info;
 			tx_desc = IXGBE_TX_DESC(tx_ring, 0);
 		}
+
+                /* If there are null packets, skip them one at a time
+                 * to assert that they are in fact null descriptors */
+                /* If we set up valid tx_buffers for each null descriptor, this
+                 * code would not be necessary because of a discrepency between
+                 * the actual NIC functionality and what is specified by the
+                 * datasheet.  Specifically, the datasheet says that if the RS
+                 * bit is set in a null descriptor, then the DD field in the
+                 * status word is not written when hardware processes them.
+                 * However, experimentally, I have found that the hardware does
+                 * in fact write the DD bit when it is done processing a null
+                 * descriptor.  However, this approach seems better to me right
+                 * now anyways. */
+                while (null_desc_count > 0) {
+                    //pr_info (" Checking for nulldesc in desc: %d (%d)\n",
+                    //    i, i + tx_ring->count);
+                    BUG_ON (!ixgbe_is_tx_nulldesc(tx_desc));
+                    null_desc_count--;
+                    tx_buffer++;
+                    tx_desc++;
+                    i++;
+                    if (unlikely(!i)) {
+                            i -= tx_ring->count;
+                            tx_buffer = tx_ring->tx_buffer_info;
+                            tx_desc = IXGBE_TX_DESC(tx_ring, 0);
+                    }
+                }
 
 		/* issue prefetch for next Tx descriptor */
 		prefetch(tx_desc);
@@ -6143,6 +6231,12 @@ static int ixgbe_open(struct net_device *netdev)
 	vxlan_get_rx_port(netdev);
 #endif
 
+        //XXX: DEBUG
+        /* Create a simple /proc file for exporting batch data to userspace.
+         * This would probably be better implemented as part of ethtool, but
+         * this seemed way easier for now. */
+        proc_create_data("ixgbe_batch_stats", 0, NULL, &ixgbe_batch_stats_proc_fops, netdev);
+
 	return 0;
 
 err_set_queues:
@@ -6173,6 +6267,20 @@ static void ixgbe_close_suspend(struct ixgbe_adapter *adapter)
 	}
 
 	ixgbe_free_irq(adapter);
+
+        //XXX: DEBUG: Track the batch sizes
+        //int i, j;
+        //for (i = 0; i < adapter->num_tx_queues; i++) {
+        //    for (j = 0; j < adapter->tx_ring[i]->skb_batch_size_stats_count; j++) {
+        //        pr_info ("tx_queue_%d_batch: %u\n", i, adapter->tx_ring[i]->skb_batch_size_stats[j]);
+        //    }
+        //    pr_info ("tx_queue_%d_batch of one: %llu\n", i,  adapter->tx_ring[i]->skb_batch_size_of_one_stats);
+        //}
+
+        //XXX: DEBUG
+        /* Remove a simple /proc file for exporting batch data to userspace.
+         * */
+        remove_proc_entry("ixgbe_batch_stats", NULL);
 
 	ixgbe_free_all_tx_resources(adapter);
 	ixgbe_free_all_rx_resources(adapter);
@@ -7333,6 +7441,15 @@ static void ixgbe_tx_csum(struct ixgbe_ring *tx_ring,
 	u32 mss_l4len_idx = 0;
 	u32 type_tucmd = 0;
 
+        //XXX: Debug
+        pr_info ("ixgbe_tx_csum:\n");
+        pr_info (" skb->ip_summed == CHECKSUM_PARTIAL: %d\n",
+            skb->ip_summed == CHECKSUM_PARTIAL);
+        pr_info (" (first->tx_flags & IXGBE_TX_FLAGS_HW_VLAN): %d\n",
+            (first->tx_flags & IXGBE_TX_FLAGS_HW_VLAN));
+        pr_info (" (first->tx_flags & IXGBE_TX_FLAGS_CC): %d\n",
+            (first->tx_flags & IXGBE_TX_FLAGS_CC));
+
 	if (skb->ip_summed != CHECKSUM_PARTIAL) {
 		if (!(first->tx_flags & IXGBE_TX_FLAGS_HW_VLAN) &&
 		    !(first->tx_flags & IXGBE_TX_FLAGS_CC))
@@ -7410,6 +7527,8 @@ static void ixgbe_tx_csum(struct ixgbe_ring *tx_ring,
 		first->tx_flags |= IXGBE_TX_FLAGS_CSUM;
 	}
 
+        pr_info ("ixgbe_tx_csum: did not return early.\n");
+
 	/* vlan_macip_lens: MACLEN, VLAN tag */
 	vlan_macip_lens |= first->tx_flags & IXGBE_TX_FLAGS_VLAN_MASK;
 
@@ -7448,7 +7567,7 @@ u32 ixgbe_tx_cmd_type(struct sk_buff *skb, u32 tx_flags)
 }
 
 void ixgbe_tx_olinfo_status(union ixgbe_adv_tx_desc *tx_desc,
-				   u32 tx_flags, unsigned int paylen)
+                            u32 tx_flags, unsigned int paylen)
 {
 	u32 olinfo_status = paylen << IXGBE_ADVTXD_PAYLEN_SHIFT;
 
@@ -7502,10 +7621,6 @@ int ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size)
 
 	return __ixgbe_maybe_stop_tx(tx_ring, size);
 }
-
-//TODO: moved to ixgbe_type.h
-//#define IXGBE_TXD_CMD (IXGBE_TXD_CMD_EOP | \
-//		       IXGBE_TXD_CMD_RS)
 
 static void ixgbe_tx_map(struct ixgbe_ring *tx_ring,
 			 struct ixgbe_tx_buffer *first,
@@ -8846,8 +8961,8 @@ static void ixgbe_tx_map_pkt_ring(struct ixgbe_ring *tx_ring,
         return;
 }
 
-static void ixgbe_atr(struct ixgbe_ring *ring,
-		      struct ixgbe_tx_buffer *first)
+void ixgbe_atr(struct ixgbe_ring *ring,
+               struct ixgbe_tx_buffer *first)
 {
 	struct ixgbe_q_vector *q_vector = ring->q_vector;
 	union ixgbe_atr_hash_dword input = { .dword = 0 };
@@ -9149,6 +9264,22 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
 
 #endif /* IXGBE_FCOE */
 
+        //XXX: for debugging ixgbe_xmit_batch.c
+        {
+	struct ixgbe_adv_tx_context_desc *context_desc;
+	context_desc = IXGBE_TX_CTXTDESC(tx_ring, 0);
+        pr_info ("Before ixgbe_tso:\n");
+        pr_info ("ctxt (0) vlan_macip_lens: %u\n",
+            context_desc->vlan_macip_lens);
+        pr_info ("ctxt (0) seqnum_seed: %u\n",
+            context_desc->seqnum_seed);
+        pr_info ("ctxt (0) type_tucmd_mlhl: %u\n",
+            context_desc->type_tucmd_mlhl);
+        pr_info ("ctxt (0) mss_l4len_idx: %u\n",
+            context_desc->mss_l4len_idx);
+        }
+
+
 	tso = ixgbe_tso(tx_ring, first, &hdr_len);
 	if (tso < 0)
 		goto out_drop;
@@ -9158,6 +9289,21 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
 	/* add the ATR filter if ATR is on */
 	if (test_bit(__IXGBE_TX_FDIR_INIT_DONE, &tx_ring->state))
 		ixgbe_atr(tx_ring, first);
+
+        //XXX: for debugging ixgbe_xmit_batch.c
+        {
+	struct ixgbe_adv_tx_context_desc *context_desc;
+	context_desc = IXGBE_TX_CTXTDESC(tx_ring, 0);
+        pr_info ("After ixgbe_tso and ixgbe_tx_csum:\n");
+        pr_info ("ctxt (0) vlan_macip_lens: %u\n",
+            context_desc->vlan_macip_lens);
+        pr_info ("ctxt (0) seqnum_seed: %u\n",
+            context_desc->seqnum_seed);
+        pr_info ("ctxt (0) type_tucmd_mlhl: %u\n",
+            context_desc->type_tucmd_mlhl);
+        pr_info ("ctxt (0) mss_l4len_idx: %u\n",
+            context_desc->mss_l4len_idx);
+        }
 
 #ifdef IXGBE_FCOE
 xmit_fcoe:
