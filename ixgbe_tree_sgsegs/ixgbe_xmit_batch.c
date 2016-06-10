@@ -283,7 +283,15 @@ static netdev_tx_t ixgbe_xmit_batch_map(struct ixgbe_adapter *adapter,
     }
 map_fpp_start:
 
-    //TODO: prefetch
+    /* Prefetch */
+    FPP_PSS(&tx_ring->skb_batch[I], map_fpp_skb_batch1,
+        tx_ring->skb_batch_size);
+map_fpp_skb_batch1:
+
+    FPP_PSS(tx_ring->skb_batch[I].skb, map_fpp_skb1,
+        tx_ring->skb_batch_size);
+map_fpp_skb1:
+
     /* Init local variables */
     _cur_skb_data[I] = &tx_ring->skb_batch[I];
     _tx_flags[I] = 0;
@@ -291,7 +299,10 @@ map_fpp_start:
     _desc_i[I] = _cur_skb_data[I]->desc_ftu;
     _hdr_len[I] = 0;
 
-    //TODO: prefetch
+    /* Prefetch */
+    FPP_PSS(&tx_ring->tx_buffer_info[_desc_i[I]], map_fpp_first1, tx_ring->skb_batch_size);
+map_fpp_first1:
+
     _first[I] = &tx_ring->tx_buffer_info[_desc_i[I]];
     _first[I]->skb = _cur_skb_data[I]->skb;
     _first[I]->bytecount = _cur_skb_data[I]->skb->len;
@@ -299,7 +310,8 @@ map_fpp_start:
     _first[I]->hr_i_valid = false;
     _first[I]->pktr_i_valid = false;
 
-    //TODO: prefetch
+    /* Prefetch: skb should already be prefetched? benchmark? */
+
     if (skb_vlan_tag_present(_cur_skb_data[I]->skb)) {
         _tx_flags[I] |= skb_vlan_tag_get(_cur_skb_data[I]->skb) << IXGBE_TX_FLAGS_VLAN_SHIFT;
         _tx_flags[I] |= IXGBE_TX_FLAGS_HW_VLAN;
@@ -308,7 +320,8 @@ map_fpp_start:
         BUG ();
     }
 
-    //TODO: prefetch
+    /* Prefetch: skb should already be prefetched? benchmark? */
+
     _protocol[I] = vlan_get_protocol(_cur_skb_data[I]->skb);
 
     if (unlikely(skb_shinfo(_cur_skb_data[I]->skb)->tx_flags & SKBTX_HW_TSTAMP) &&
@@ -331,6 +344,10 @@ map_fpp_start:
 
 #endif
 
+/* While I have plans on using DCB in the future, I am not currently using
+ * DCB.  I'll deal with this code later. */
+#if 0
+    /* Prefetch? */
     /* DCB maps skb priorities 0-7 onto 3 bit PCP of VLAN tag. */
     //XXX: This code has never been tested
     if ((adapter->flags & IXGBE_FLAG_DCB_ENABLED) &&
@@ -351,6 +368,7 @@ map_fpp_start:
                     _tx_flags[I] |= IXGBE_TX_FLAGS_HW_VLAN;
             }
     }
+#endif
 
     /* record initial flags and protocol */
     _first[I]->tx_flags = _tx_flags[I];
@@ -361,14 +379,20 @@ map_fpp_start:
     //BUG ();
 #endif /* IXGBE_FCOE */
 
-    //TODO: prefetch
+    /* Prefetch */
+    prefetch(tx_ring);
+    prefetch(_first[I]);
+    prefetchw(IXGBE_TX_CTXTDESC(tx_ring, _desc_i[I]));
+    FPP_PSS(_first[I]->skb, map_fpp_tso_batch_safe, tx_ring->skb_batch_size);
+map_fpp_tso_batch_safe:
+
     _tso[I] = ixgbe_tso_batch_safe(tx_ring, _first[I], _desc_i[I], &_hdr_len[I]);
     _csum[I] = 0;
     if (_tso[I] < 0) {
 	dev_kfree_skb_any(_first[I]->skb);
 	_first[I]->skb = NULL;
         //TODO: In this case, we need to make sure that all of the allocated
-        // descriptors are set correctly for 0-byte segments.
+        // descriptors are null descriptors.
         BUG ();
         goto map_fpp_end;
     } else if (!_tso[I]) {
@@ -392,6 +416,13 @@ map_fpp_start:
      *  This code is mostly copy/pasted from ixgbe_tx_map(...).
      */
 
+    /* Prefetch */
+    prefetch(_first[I]);
+    prefetch(_cur_skb_data[I]->skb);
+    FPP_PSS(IXGBE_TX_DESC(tx_ring, _desc_i[I]), map_fpp_init_data_desc,
+            tx_ring->skb_batch_size);
+map_fpp_init_data_desc:
+
     /* Init mapping variables */
     /* Note: Above functions add in more data to _first[I]->tx_flags */
     _tx_flags[I] = _first[I]->tx_flags;
@@ -409,16 +440,28 @@ map_fpp_start:
     //BUG ();
 #endif
 
+    /* Prefetch */
+    FPP_PSS(_cur_skb_data[I]->skb->data, map_fpp_skb_data1, tx_ring->skb_batch_size);
+map_fpp_skb_data1:
+
     _dma[I] = dma_map_single(tx_ring->dev, _cur_skb_data[I]->skb->data,
         _size[I], DMA_TO_DEVICE);
 
     _tx_buffer[I] = _first[I];
 
     for (_frag[I] = &skb_shinfo(_cur_skb_data[I]->skb)->frags[0];; _frag[I]++) {
+
             if (dma_mapping_error(tx_ring->dev, _dma[I])) {
+                //TODO: null descriptors solve this problem
                 pr_info ("Mapping errors haven't been handled yet. Panicing\n");
                 BUG ();
             }
+
+            /* Prefetch */
+            prefetch(_tx_buffer[I]);
+            FPP_PSS(_tx_desc[I], map_fpp_dma1, tx_ring->skb_batch_size);
+map_fpp_dma1:
+
 
             /* record length, and DMA address */
             dma_unmap_len_set(_tx_buffer[I], len, _size[I]);
@@ -455,6 +498,11 @@ map_fpp_start:
                     _tx_desc[I] = IXGBE_TX_DESC(tx_ring, 0);
                     _desc_i[I] = 0;
             }
+
+            prefetch(_frag[I]);
+            FPP_PSS(_tx_desc[I], map_fpp_dma2, tx_ring->skb_batch_size);
+map_fpp_dma2:
+
             _tx_desc[I]->read.olinfo_status = 0;
 
 #ifdef IXGBE_FCOE
@@ -484,8 +532,6 @@ map_fpp_start:
      * are new descriptors to fetch.  (Only applicable for weak-ordered
      * memory model archs, such as IA-64).
      *
-     * We also need this memory barrier to make certain all of the
-     * status bits have been updated before next_to_watch is written.
      */
     wmb();
 
@@ -510,6 +556,11 @@ map_fpp_start:
                       _cur_skb_data[I]->desc_count) % 
                      tx_ring->count);
     while (_desc_i[I] != _quit_desc[I]) {
+        /* Prefetch */
+        FPP_PSS(IXGBE_TX_DESC(tx_ring, _desc_i[I]), map_fpp_nulldesc,
+                tx_ring->skb_batch_size);
+map_fpp_nulldesc:
+
         //pr_info(" nulldesc i: %d\n", _desc_i[I]);
         ixgbe_tx_nulldesc(tx_ring, _desc_i[I]);
         _first[I]->null_desc_count++;

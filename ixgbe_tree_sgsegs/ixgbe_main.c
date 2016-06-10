@@ -228,8 +228,8 @@ ixgbe_batch_stats_proc_show(struct seq_file *seq, void *v)
 
     for (i = 0; i < adapter->num_tx_queues; i++) {
         /* Print stats. */
-        pr_info ("tx_queue_%d stats_count: %u\n", i,
-                 adapter->tx_ring[i]->skb_batch_size_stats_count);
+        //pr_info ("tx_queue_%d stats_count: %llu\n", i,
+        //         adapter->tx_ring[i]->skb_batch_size_stats_count);
         for (j = 0; j < adapter->tx_ring[i]->skb_batch_size_stats_count; j++) {
             seq_printf (seq, "- tx_queue_%d_batch: %u\n", i, adapter->tx_ring[i]->skb_batch_size_stats[j]);
         }
