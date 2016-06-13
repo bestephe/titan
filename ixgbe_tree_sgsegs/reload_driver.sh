@@ -8,7 +8,8 @@ rmmod ixgbe
 #insmod ixgbe.ko drv_gso_size=16384
 #insmod ixgbe.ko use_pkt_ring=1
 #insmod ixgbe.ko
-insmod ixgbe.ko xmit_batch=1
+#insmod ixgbe.ko xmit_batch=1
+insmod ixgbe.ko xmit_batch=1 num_queues=32
 
 sleep 1
 

@@ -177,6 +177,11 @@ static int debug = -1;
 module_param(debug, int, 0);
 MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
 
+int kern_gso_size = 0;
+module_param(kern_gso_size, uint, 0);
+MODULE_PARM_DESC(kern_gso_size,
+                 "Change the gso size used by the kernel to send this driver SKBs.  Specifically, this causes the following function to be called: netif_set_gso_max_size(netdev, kern_gso_size);");
+
 /* TODO: not including packet headers in this size is probably a mistake.
  * I should think about this more. */
 int drv_gso_size = 1448;
@@ -201,6 +206,11 @@ int xmit_batch = 0;
 module_param(xmit_batch, uint, 0);
 MODULE_PARM_DESC(xmit_batch,
                  "Use Gopt style batching to batch segment queuing.");
+
+int num_queues = 0;
+module_param(num_queues, uint, 0);
+MODULE_PARM_DESC(num_queues,
+                 "The number of rx/tx queues to use.  Cannot be larger than 64.  Setting it to zero will use the system default.");
 
 #if 0
 /* When mapping to the pkt ring, should data be prefetched. */
@@ -5577,12 +5587,16 @@ static int ixgbe_sw_init(struct ixgbe_adapter *adapter)
 	hw->subsystem_device_id = pdev->subsystem_device;
 
 	/* Set common capability flags and settings */
-	rss = min_t(int, ixgbe_max_rss_indices(adapter), num_online_cpus());
+        /* Allow for more queues than cpus */
+	rss = ixgbe_max_rss_indices(adapter);
+	//rss = min_t(int, ixgbe_max_rss_indices(adapter), num_online_cpus());
 	adapter->ring_feature[RING_F_RSS].limit = rss;
 	adapter->flags2 |= IXGBE_FLAG2_RSC_CAPABLE;
 	adapter->max_q_vectors = MAX_Q_VECTORS_82599;
 	adapter->atr_sample_rate = 20;
-	fdir = min_t(int, IXGBE_MAX_FDIR_INDICES, num_online_cpus());
+        /* Allow for more queues than cpus */
+	fdir = IXGBE_MAX_FDIR_INDICES;
+	//fdir = min_t(int, IXGBE_MAX_FDIR_INDICES, num_online_cpus());
 	adapter->ring_feature[RING_F_FDIR].limit = fdir;
 	adapter->fdir_pballoc = IXGBE_FDIR_PBALLOC_64K;
 #ifdef CONFIG_IXGBE_DCA
@@ -5735,6 +5749,7 @@ static int ixgbe_sw_init(struct ixgbe_adapter *adapter)
 	set_bit(__IXGBE_DOWN, &adapter->state);
 
         /* DEBUG: Note what parameters are being used. */
+        pr_info ("kern_gso_size: %u\n", kern_gso_size);
         pr_info ("drv_gso_size: %u\n", drv_gso_size);
         pr_info ("use_pkt_ring: %u\n", use_pkt_ring);
         pr_info ("use_sgseg: %u\n", use_sgseg);
@@ -7441,15 +7456,6 @@ static void ixgbe_tx_csum(struct ixgbe_ring *tx_ring,
 	u32 mss_l4len_idx = 0;
 	u32 type_tucmd = 0;
 
-        //XXX: Debug
-        pr_info ("ixgbe_tx_csum:\n");
-        pr_info (" skb->ip_summed == CHECKSUM_PARTIAL: %d\n",
-            skb->ip_summed == CHECKSUM_PARTIAL);
-        pr_info (" (first->tx_flags & IXGBE_TX_FLAGS_HW_VLAN): %d\n",
-            (first->tx_flags & IXGBE_TX_FLAGS_HW_VLAN));
-        pr_info (" (first->tx_flags & IXGBE_TX_FLAGS_CC): %d\n",
-            (first->tx_flags & IXGBE_TX_FLAGS_CC));
-
 	if (skb->ip_summed != CHECKSUM_PARTIAL) {
 		if (!(first->tx_flags & IXGBE_TX_FLAGS_HW_VLAN) &&
 		    !(first->tx_flags & IXGBE_TX_FLAGS_CC))
@@ -7526,8 +7532,6 @@ static void ixgbe_tx_csum(struct ixgbe_ring *tx_ring,
 		/* update TX checksum flag */
 		first->tx_flags |= IXGBE_TX_FLAGS_CSUM;
 	}
-
-        pr_info ("ixgbe_tx_csum: did not return early.\n");
 
 	/* vlan_macip_lens: MACLEN, VLAN tag */
 	vlan_macip_lens |= first->tx_flags & IXGBE_TX_FLAGS_VLAN_MASK;
@@ -9264,6 +9268,7 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
 
 #endif /* IXGBE_FCOE */
 
+#if 0
         //XXX: for debugging ixgbe_xmit_batch.c
         {
 	struct ixgbe_adv_tx_context_desc *context_desc;
@@ -9278,6 +9283,7 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
         pr_info ("ctxt (0) mss_l4len_idx: %u\n",
             context_desc->mss_l4len_idx);
         }
+#endif
 
 
 	tso = ixgbe_tso(tx_ring, first, &hdr_len);
@@ -9290,6 +9296,7 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
 	if (test_bit(__IXGBE_TX_FDIR_INIT_DONE, &tx_ring->state))
 		ixgbe_atr(tx_ring, first);
 
+#if 0
         //XXX: for debugging ixgbe_xmit_batch.c
         {
 	struct ixgbe_adv_tx_context_desc *context_desc;
@@ -9304,6 +9311,7 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
         pr_info ("ctxt (0) mss_l4len_idx: %u\n",
             context_desc->mss_l4len_idx);
         }
+#endif
 
 #ifdef IXGBE_FCOE
 xmit_fcoe:
@@ -10524,7 +10532,21 @@ static int ixgbe_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	ixgbe_enable_sriov(adapter);
 skip_sriov:
 
+
 #endif
+
+        //TODO: Check if ethtool -L actually works to set the number of
+        // queues before using this approach.
+        //XXX: I can't get ethtool -L to work, so I'm using this more hacky
+        // approach.
+        if (num_queues > MAX_TX_QUEUES) {
+            pr_info ("Config Error: The maximum number of queues is 64\n");
+        } else if (num_queues) {
+            pr_info ("Trying to set the number of queues: %d\n", num_queues);
+            adapter->ring_feature[RING_F_RSS].limit = num_queues;
+            adapter->ring_feature[RING_F_FDIR].limit = num_queues;
+        }
+
 	netdev->features = NETIF_F_SG |
 			   NETIF_F_IP_CSUM |
 			   NETIF_F_IPV6_CSUM |
@@ -10760,6 +10782,13 @@ skip_sriov:
 		hw->mac.ops.setup_link(hw,
 			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
 			true);
+
+
+        /* Change the kernel gso size, if requested. */
+        if (kern_gso_size > 0) {
+            pr_info("Setting the kernel gso size to: %d\n", kern_gso_size);
+            netif_set_gso_max_size(netdev, kern_gso_size);
+        }
 
 	return 0;
 

@@ -194,7 +194,8 @@ struct ixgbe_single_pkt {
 //typical header size? We could size the descriptors according to
 //that.
 //#define IXGBE_MAX_HDR_BYTES                     (512)
-#define IXGBE_MAX_HDR_BYTES                     (256) //hdr_len is a u8, so 256 is clearly a driver internal max on header length
+//#define IXGBE_MAX_HDR_BYTES                     (256) //hdr_len is a u8, so 256 is clearly a driver internal max on header length
+#define IXGBE_MAX_HDR_BYTES                     (128) //hdr_len is a u8, so 256 is clearly a driver internal max on header length
 struct ixgbe_pkt_hdr {
     u8  raw[IXGBE_MAX_HDR_BYTES];
 };

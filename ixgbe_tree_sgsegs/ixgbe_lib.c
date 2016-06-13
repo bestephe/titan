@@ -609,6 +609,12 @@ static bool ixgbe_set_rss_queues(struct ixgbe_adapter *adapter)
 	f = &adapter->ring_feature[RING_F_RSS];
 	rss_i = f->limit;
 
+        pr_info ("ixgbe_set_rss_queues:\n");
+        pr_info (" rss_i: %d\n", rss_i);
+
+        /* TODO: If we want more ethan 16Qs, then I think we will have to
+         * change f->mask as well. */
+
 	f->indices = rss_i;
 	f->mask = IXGBE_RSS_16Q_MASK;
 
@@ -642,6 +648,8 @@ static bool ixgbe_set_rss_queues(struct ixgbe_adapter *adapter)
 		struct net_device *dev = adapter->netdev;
 		u16 fcoe_i;
 
+                pr_info ("ixgbe_set_rss_queues: fcoe enabled!\n");
+
 		f = &adapter->ring_feature[RING_F_FCOE];
 
 		/* merge FCoE queues with RSS queues */
@@ -661,6 +669,9 @@ static bool ixgbe_set_rss_queues(struct ixgbe_adapter *adapter)
 #endif /* IXGBE_FCOE */
 	adapter->num_rx_queues = rss_i;
 	adapter->num_tx_queues = rss_i;
+
+        pr_info ("ixgbe_set_rss_queues: %d queues\n",
+                 adapter->num_rx_queues);
 
 	return true;
 }
@@ -684,6 +695,9 @@ static void ixgbe_set_num_queues(struct ixgbe_adapter *adapter)
 	adapter->num_rx_pools = adapter->num_rx_queues;
 	adapter->num_rx_queues_per_pool = 1;
 
+        pr_info ("ixgbe_set_num_queues: RING_F_RSS.limit: %d\n",
+                 adapter->ring_feature[RING_F_RSS].limit);
+
 #ifdef CONFIG_IXGBE_DCB
 	if (ixgbe_set_dcb_sriov_queues(adapter))
 		return;
@@ -696,6 +710,10 @@ static void ixgbe_set_num_queues(struct ixgbe_adapter *adapter)
 		return;
 
 	ixgbe_set_rss_queues(adapter);
+
+        pr_info ("ixgbe_set_num_queues END:\n");
+        pr_info (" adapter->num_rx_queues: %d\n", adapter->num_rx_queues);
+        pr_info (" adapter->num_tx_queues: %d\n", adapter->num_tx_queues);
 }
 
 /**

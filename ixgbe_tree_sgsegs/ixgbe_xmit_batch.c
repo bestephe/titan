@@ -685,9 +685,13 @@ netdev_tx_t ixgbe_xmit_frame_ring_batch(struct sk_buff *skb,
     }
 
     /* Count the number of other ring entries that will be used */
-    hr_count = (skb_shinfo(skb)->gso_segs); // -1 if the first packet
-                                            // uses the existing header
-    pktr_count = skb_shinfo(skb)->gso_segs;
+    hr_count = 0;
+    pktr_count = 0;
+    if (use_sgseg)
+        hr_count = (skb_shinfo(skb)->gso_segs); // -1 if the first packet
+                                                // uses the existing header
+    else if (use_pkt_ring)
+        pktr_count = skb_shinfo(skb)->gso_segs;
 
     // This should always hold now, but may not in the future. */
     BUG_ON((tx_ring->skb_batch_hr_count + hr_count) > 
@@ -701,9 +705,10 @@ netdev_tx_t ixgbe_xmit_frame_ring_batch(struct sk_buff *skb,
      * because we should've sent the batch earlier if we thought there
      * wouldn't be enough room for another skb. */
     if (ixgbe_maybe_stop_tx(tx_ring, batch_desc_count)) {
-        pr_info ("ixgbe_xmit_frame_ring_batch: purging and returning NETDEV_TX_BUSY.\n");
-        pr_info (" batch_desc_count: %d\n, ixgbe_desc_unused(tx_ring): %d\n",
-                 batch_desc_count, ixgbe_desc_unused(tx_ring));
+        //pr_info ("ixgbe_xmit_frame_ring_batch: purging and returning NETDEV_TX_BUSY.\n");
+        //pr_info (" batch_desc_count: %d\n, ixgbe_desc_unused(tx_ring): %d\n",
+        //         batch_desc_count, ixgbe_desc_unused(tx_ring));
+        //TODO: check tx_busy somewhere in the measurement scripts 
 
         /* Purge the current batch */
         purge_ret = ixgbe_xmit_batch_purge(adapter, tx_ring);
