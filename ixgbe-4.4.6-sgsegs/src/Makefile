@@ -32,6 +32,7 @@ obj-$(CONFIG_IXGBE) += ixgbe.o
 
 define ixgbe-y
 	ixgbe_main.o
+        ixgbe_xmit_batch.o
 	ixgbe_api.o
 	ixgbe_common.o
 	ixgbe_dcb.o

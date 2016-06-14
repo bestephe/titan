@@ -253,6 +253,113 @@ struct vf_macvlans {
 #define DESC_NEEDED	(MAX_SKB_FRAGS + 4)
 #endif
 
+//XXX: These next definitions may be out of place
+#define IXGBE_MAX_PKT_BYTES                     (2048)
+//#define IXGBE_TX_PKT_RING_SIZE                  (2048)
+struct ixgbe_single_pkt {
+    u8  raw[IXGBE_MAX_PKT_BYTES];
+};
+
+//TODO: 512 is the maximum header size the ixgbe will handle. What is a
+//typical header size? We could size the descriptors according to
+//that.
+//#define IXGBE_MAX_HDR_BYTES                     (512)
+#define IXGBE_MAX_HDR_BYTES                     (256) //hdr_len is a u8, so 256 is clearly a driver internal max on header length
+//#define IXGBE_MAX_HDR_BYTES                     (128) //hdr_len is a u8, so 256 is clearly a driver internal max on header length
+struct ixgbe_pkt_hdr {
+    u8  raw[IXGBE_MAX_HDR_BYTES];
+};
+//TODO: somewhere place a BUG_ON(sizeof(ixgbe_pkt_hdr) != 512)
+
+#define IXGBE_DEFAULT_HDR_RING_BYTES        (IXGBE_MAX_HDR_BYTES * IXGBE_DEFAULT_TXD)
+
+//TODO: This value has been picked arbitrarily.  I should measure what a
+//reasonable value of this should be.
+//TODO: perhaps current batch size should be a module parameter to make
+//measurement easier.
+#define IXGBE_MAX_XMIT_BATCH_SIZE           (8)
+#define IXGBE_MAX_XMIT_BATCH_SIZE_          (7)
+
+static inline u16 ixgbe_txd_count(struct sk_buff *skb)
+{
+	unsigned short f;
+
+	/*
+	 * need: 1 descriptor per page * PAGE_SIZE/IXGBE_MAX_DATA_PER_TXD,
+	 *       + 1 desc for skb_headlen/IXGBE_MAX_DATA_PER_TXD,
+	 *       + 2 desc gap to keep tail from touching head,
+	 *       + 1 desc for context descriptor,
+	 * otherwise try next time
+	 */
+        u16 count = 1;
+
+        count += TXD_USE_COUNT(skb_headlen(skb));
+	for (f = 0; f < skb_shinfo(skb)->nr_frags; f++)
+		count += TXD_USE_COUNT(skb_shinfo(skb)->frags[f].size);
+
+        return count;
+}
+
+/* This function currently provides an over-estimate of the number of
+ * descriptors needed to enqueue each segment.  This implies that segments
+ * that require less descriptors will need to create valid data descriptors
+ * of length 0 with any remaining allocated descriptors.  An exact allocation
+ * would be possible, but it would require more compuation. */
+/* XXX: BS: It is not immediately obvious to me which choice is better. */
+static inline u16 ixgbe_txd_count_sgsegs(struct sk_buff *skb)
+{
+        u16 per_seg_count = 0;
+        u16 count = 0;
+
+        /* This assertion doesn't hold unless tso == 1, and ixgbe_tso(...)
+         * hasn't been called yet. */
+        //BUG_ON (skb_headlen(skb) > IXGBE_MAX_HDR_BYTES);
+
+        BUG_ON (TXD_USE_COUNT(skb_headlen(skb)) != 1);
+
+        //XXX: This count assumes that the drv_gso_size is less than
+        // IXGBE_MAX_DATA_PER_TXD.  This requirement can be removed, but the
+        // count will need to be increased and this code changed.
+        //TODO: GSOSize will need to be saved somewhere for this assertion to
+        //be made here.
+        //BUG_ON (drv_gso_size > IXGBE_MAX_DATA_PER_TXD);
+
+        /* Sgsegs should need at most 4 descriptors per seg, but often use 3:
+         *          (+ 1 desc for context descriptor)
+         *          (+ 1 desc for header descriptor)
+         *          (+ 1 desc for data descriptor)
+         *          (?+1 desc if the segment falls on a boundary)
+         */
+        per_seg_count = 4;
+
+        count = per_seg_count * skb_shinfo(skb)->gso_segs;
+
+        return count;
+}
+
+static inline u16 ixgbe_txd_count_pktring(struct sk_buff *skb)
+{
+        u16 per_seg_count = 0;
+        u16 count = 0;
+
+        //XXX: This count assumes that the drv_gso_size is less than
+        // IXGBE_MAX_DATA_PER_TXD.  This requirement can be removed, but the
+        // count will need to be increased.
+        //TODO: GSOSize will need to be saved somewhere for this assertion to
+        //be made here.
+        //BUG_ON (drv_gso_size > IXGBE_MAX_DATA_PER_TXD);
+
+        /* Pkt ring should need at most 2 descriptors per seg:
+         *          (+ 1 desc for context descriptor)
+         *          (+ 1 desc for header+data descriptor)
+         */
+        per_seg_count = 2;
+
+        count = per_seg_count * skb_shinfo(skb)->gso_segs;
+
+        return count;
+}
+
 /* wrapper around a pointer to a socket buffer,
  * so a DMA handle can be stored along with the buffer */
 struct ixgbe_tx_buffer {
@@ -265,7 +372,66 @@ struct ixgbe_tx_buffer {
 	DEFINE_DMA_UNMAP_ADDR(dma);
 	DEFINE_DMA_UNMAP_LEN(len);
 	u32 tx_flags;
+
+        //TODO: I will likely need to add a field to this structure to
+        //maintain which statically allocated packet header buffer+len
+        //has been consumed.
+        //TODO: size_t is probably too big if we set a reasonable upper
+        //bound on the amount of memory pre-allocated for packet
+        //headers. i32?
+        bool hr_i_valid;
+        u16 hr_i;
+
+        bool pktr_i_valid;
+        u16 pktr_i;
+
+        /* Used to inform ixgbe_clean_tx_irq about null descriptors so that it
+         * can correctly find the next ixgbe_tx_buffer */
+        u16 null_desc_count;
+
+        /* Use for mapping all of the DMA segments of an skb in a batch
+         * because they will all eventually be used.  This is wasteful of
+         * memory because this will only ever be used in the "first"
+         * tx_buffer even though we're allocating space for it for all
+         * tx_buffers. */
+        struct {
+            DEFINE_DMA_UNMAP_ADDR(fdma);
+            DEFINE_DMA_UNMAP_LEN(flen);
+        } frag_dma[MAX_SKB_FRAGS];
+
+        /* Included so more context descriptors can be created. */
+	u32 vlan_macip_lens;
+        u32 type_tucmd;
+	u32 mss_l4len_idx;
 };
+
+/* wrapper around skb metadata for processing tx skb's in a batch. */
+struct ixgbe_skb_batch_data {
+        struct sk_buff *skb;
+        u16 desc_count;
+        u16 desc_ftu;
+        u16 hr_count;
+        u16 hr_ftu;
+        u16 pktr_count;
+        u16 pktr_ftu;
+};
+
+static inline void ixgbe_tx_buffer_clean(struct ixgbe_tx_buffer *tx_buffer)
+{
+	tx_buffer->next_to_watch = NULL;
+	tx_buffer->skb = NULL;
+	dma_unmap_len_set(tx_buffer, len, 0);
+
+        // Extra variables needed for sg-segmentation
+        //TODO: XXX: Only valid or -1 needs to be set, not both
+        tx_buffer->hr_i = -1;
+        tx_buffer->hr_i_valid = false;
+        tx_buffer->pktr_i = -1;
+        tx_buffer->pktr_i_valid = false;
+        //tx_buffer->sk_tbl_item = NULL;
+
+        tx_buffer->null_desc_count = 0;
+}
 
 struct ixgbe_rx_buffer {
 	struct sk_buff *skb;
@@ -327,6 +493,7 @@ enum ixgbe_ring_state_t {
 #define netdev_ring(ring) (ring->netdev)
 #define ring_queue_index(ring) (ring->queue_index)
 
+#define IXGBE_MAX_BATCH_SIZE_STATS      (1024 * 256)
 
 struct ixgbe_ring {
 	struct ixgbe_ring *next;	/* pointer to next ring in q_vector */
@@ -344,6 +511,50 @@ struct ixgbe_ring {
 	unsigned int size;		/* length in bytes */
 
 	u16 count;			/* amount of descriptors */
+
+        void *header_ring;              /* Pre-allocated buffer used to carry
+                                         * packet headers. This should only be
+                                         * used in conjunction with
+                                         * scatter/gather segmentation.
+                                         */
+        size_t header_ring_len;
+        dma_addr_t header_ring_dma;     /* The dma handle to the header ring. */
+        
+
+        //XXX: Unless hr spots are allocated as lazy as possible, this current
+        // allocation scheme is likely not appropriate!  This needs to be
+        // revisited.
+        /* The following three variables are in units of ixgbe_pkt_hdr slots,
+         * which should be 512 bytes each.  */
+        size_t hr_count;
+        size_t hr_next_to_clean;
+        size_t hr_next_to_use;
+
+        /* Array of Pre-allocated pages for carrying copied and serialized packets. */
+        /* TODO: if preallocating 2MB at once is too much for the kernel,
+         * then this should be broken up into an array of multiple
+         * allocations. */
+        void *pkt_ring;
+        size_t pkt_ring_len;
+        dma_addr_t pkt_ring_dma;
+        size_t pktr_count;
+        size_t pktr_next_to_clean;
+        size_t pktr_next_to_use;
+
+        /* Array of skb's to be transmitted in a batch */
+        //TODO: should this be for each skb or for each packet?
+        //TODO: some things need to be done per-segment and other things
+        // should be done per-packet.
+        struct ixgbe_skb_batch_data skb_batch[IXGBE_MAX_XMIT_BATCH_SIZE];
+        u16 skb_batch_size;
+        u16 skb_batch_desc_count;
+        u16 skb_batch_hr_count;
+        u16 skb_batch_pktr_count;
+
+        //XXX: DEBUG: Check the batch sizes
+        u8 skb_batch_size_stats[IXGBE_MAX_BATCH_SIZE_STATS];
+        u64 skb_batch_size_stats_count;
+        u64 skb_batch_size_of_one_stats;
 
 	u8 queue_index; /* needed for multiqueue queue management */
 	u8 reg_idx;			/* holds the special value that gets
@@ -376,6 +587,18 @@ struct ixgbe_ring {
 		struct ixgbe_rx_queue_stats rx_stats;
 	};
 } ____cacheline_internodealigned_in_smp;
+
+#define IXGBE_TX_PKT(R, i)	    \
+	(&(((struct ixgbe_single_pkt *)((R)->pkt_ring))[i]))
+//TODO: This function would be faster if it was implemented by bit shifting
+#define IXGBE_TX_PKT_OFFSET(i)	    (IXGBE_MAX_PKT_BYTES * i)
+
+#define IXGBE_TX_HDR(R, i)	    \
+	(&(((struct ixgbe_pkt_hdr *)((R)->header_ring))[i]))
+//TODO: This function would be faster if it was implemented by bit shifting
+#define IXGBE_TX_HDR_OFFSET(i)	    (IXGBE_MAX_HDR_BYTES * i)
+
+/* TODO: Define functions for manipulating the header ring */
 
 enum ixgbe_ring_f_enum {
 	RING_F_NONE = 0,
@@ -614,6 +837,26 @@ static inline u16 ixgbe_desc_unused(struct ixgbe_ring *ring)
 	return ((ntc > ntu) ? 0 : ring->count) + ntc - ntu - 1;
 }
 
+static inline size_t ixgbe_hr_unused(struct ixgbe_ring *ring)
+{
+	size_t ntc = ring->hr_next_to_clean;
+	size_t ntu = ring->hr_next_to_use;
+
+        //TODO: Paranoid me thinks it would also be a good idea to keep track of the total number of used headers in the ring
+
+	return ((ntc > ntu) ? 0 : ring->hr_count) + ntc - ntu - 1;
+}
+
+static inline size_t ixgbe_pktr_unused(struct ixgbe_ring *ring)
+{
+	size_t ntc = ring->pktr_next_to_clean;
+	size_t ntu = ring->pktr_next_to_use;
+
+        //TODO: Paranoid me thinks it would also be a good idea to keep track of the total number of used headers in the ring
+
+	return ((ntc > ntu) ? 0 : ring->pktr_count) + ntc - ntu - 1;
+}
+
 #define IXGBE_RX_DESC(R, i)	\
 	(&(((union ixgbe_adv_rx_desc *)((R)->desc))[i]))
 #define IXGBE_TX_DESC(R, i)	\
@@ -757,6 +1000,13 @@ struct ixgbe_adapter {
 #define IXGBE_FLAG2_VLAN_PROMISC		(u32)(1 << 18)
 
 	bool cloud_mode;
+
+        /* Variables for changing driver config to make experiments easier */
+        bool xmit_batch;
+        bool use_sgseg;
+        bool use_pkt_ring;
+        u32 kern_gso_size;
+        u32 drv_gso_size;
 
 	/* Tx fast path data */
 	int num_tx_queues;
@@ -1047,7 +1297,14 @@ void ixgbe_clear_vxlan_port(struct ixgbe_adapter *);
 void ixgbe_set_rx_mode(struct net_device *netdev);
 int ixgbe_write_mc_addr_list(struct net_device *netdev);
 int ixgbe_setup_tc(struct net_device *dev, u8 tc);
+void ixgbe_tx_nulldesc(struct ixgbe_ring *, u16);
+int ixgbe_is_tx_nulldesc(union ixgbe_adv_tx_desc *tx_desc);
+void ixgbe_tx_ctxtdesc_ntu(struct ixgbe_ring *, u32, u32, u32, u32, u16);
 void ixgbe_tx_ctxtdesc(struct ixgbe_ring *, u32, u32, u32, u32);
+u32 ixgbe_tx_cmd_type(u32);
+void ixgbe_tx_olinfo_status(union ixgbe_adv_tx_desc *, u32, unsigned int);
+void ixgbe_atr(struct ixgbe_ring *, struct ixgbe_tx_buffer *);
+inline int ixgbe_maybe_stop_tx(struct ixgbe_ring *, u16);
 void ixgbe_do_reset(struct net_device *netdev);
 void ixgbe_write_eitr(struct ixgbe_q_vector *q_vector);
 int ixgbe_poll(struct napi_struct *napi, int budget);

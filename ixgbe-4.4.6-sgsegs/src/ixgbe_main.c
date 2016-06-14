@@ -54,8 +54,14 @@
 #include <net/vxlan.h>
 #endif /* HAVE_VXLAN_CHECKS */
 
+//XXX: DEBUG: for /proc
+#include <linux/fs.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+
 #include "ixgbe_dcb_82599.h"
 #include "ixgbe_sriov.h"
+#include "ixgbe_xmit_batch.h"
 
 #define DRV_HW_PERF
 
@@ -67,7 +73,7 @@
 
 #define RELEASE_TAG
 
-#define DRV_VERSION	"4.4.6" \
+#define DRV_VERSION	"4.4.6-sgsegs-sf" \
 			DRIVERIOV DRV_HW_PERF FPGA \
 			BYPASS_TAG RELEASE_TAG
 #define DRV_SUMMARY	"Intel(R) 10GbE PCI Express Linux Network Driver"
@@ -151,6 +157,48 @@ static struct workqueue_struct *ixgbe_wq;
 
 static bool ixgbe_is_sfp(struct ixgbe_hw *hw);
 static bool ixgbe_check_cfg_remove(struct ixgbe_hw *hw, struct pci_dev *pdev);
+
+//XXX: DEBUG
+/* Functions for a simple /proc file for exporting batch data to userspace */
+static int
+ixgbe_batch_stats_proc_show(struct seq_file *seq, void *v)
+{
+    struct net_device *netdev = seq->private;
+    struct ixgbe_adapter *adapter = netdev_priv(netdev);
+    int i, j;
+
+    for (i = 0; i < adapter->num_tx_queues; i++) {
+        /* Print stats. */
+        //pr_info ("tx_queue_%d stats_count: %llu\n", i,
+        //         adapter->tx_ring[i]->skb_batch_size_stats_count);
+        for (j = 0; j < adapter->tx_ring[i]->skb_batch_size_stats_count; j++) {
+            seq_printf (seq, "- tx_queue_%d_batch: %u\n", i, adapter->tx_ring[i]->skb_batch_size_stats[j]);
+        }
+        seq_printf (seq, "- tx_queue_%d_batch_of_one: %llu\n", i,  adapter->tx_ring[i]->skb_batch_size_of_one_stats);
+
+        /* Reset stats. */
+        /* Resetting doesn't seem to work properly right now. */
+        //pr_info ("resetting stats...\n");
+        //adapter->tx_ring[i]->skb_batch_size_stats_count = 0;
+        //adapter->tx_ring[i]->skb_batch_size_of_one_stats = 0;
+    }
+
+    return 0;
+}
+
+static int
+ixgbe_batch_stats_proc_open(struct inode *inode, struct file *file)
+{
+    return single_open(file, ixgbe_batch_stats_proc_show, PDE_DATA(inode));
+}
+
+static const struct file_operations ixgbe_batch_stats_proc_fops = {
+    .owner      = THIS_MODULE,
+    .open       = ixgbe_batch_stats_proc_open,
+    .read       = seq_read,
+    .llseek     = seq_lseek,
+    .release    = single_release,
+};
 
 static int ixgbe_read_pci_cfg_word_parent(struct ixgbe_hw *hw,
 					  u32 reg, u16 *value)
@@ -723,6 +771,8 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 	unsigned int total_bytes = 0, total_packets = 0;
 	unsigned int budget = q_vector->tx.work_limit;
 	unsigned int i = tx_ring->next_to_clean;
+        unsigned int frag_i;
+        u16 null_desc_count;
 
 	if (test_bit(__IXGBE_DOWN, &adapter->state))
 		return true;
@@ -752,18 +802,73 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 		total_bytes += tx_buffer->bytecount;
 		total_packets += tx_buffer->gso_segs;
 
+                /* Free any mapped fragments. */
+                //pr_info ("ixgbe_clean_tx_irq:\n");
+                for (frag_i = 0; frag_i < MAX_SKB_FRAGS; frag_i++) {
+                    //pr_info (" frag_i: %d, frag_dma[frag_i].flen: %d\n",
+                    //         frag_i, dma_unmap_len(tx_buffer, frag_dma[frag_i].flen));
+                    if (dma_unmap_len(tx_buffer, frag_dma[frag_i].flen) > 0) {
+                        dma_unmap_page(tx_ring->dev,
+                                       dma_unmap_addr(tx_buffer, frag_dma[frag_i].fdma),
+                                       dma_unmap_len(tx_buffer, frag_dma[frag_i].flen),
+                                       DMA_TO_DEVICE);
+                        dma_unmap_len_set(tx_buffer, frag_dma[frag_i].flen, 0);
+                    } else {
+                        break;
+                    }
+                }
+
+                /* No fragments will be mapped if it is not a TSO segment.
+                   Otherwise, all of the fragments should have been mapped. */
+                //pr_info ("ixgbe_clean_tx_irq:\n");
+                //pr_info (" frag_i: %d, nr_frags: %d\n", frag_i,
+                //         skb_shinfo(tx_buffer->skb)->nr_frags);
+                if (frag_i != 0) {
+                    BUG_ON (frag_i != skb_shinfo(tx_buffer->skb)->nr_frags);
+                }
+
 		/* free the skb */
 		dev_kfree_skb_any(tx_buffer->skb);
 
 		/* unmap skb header data */
-		dma_unmap_single(tx_ring->dev,
-				 dma_unmap_addr(tx_buffer, dma),
-				 dma_unmap_len(tx_buffer, len),
-				 DMA_TO_DEVICE);
+                if (dma_unmap_len(tx_buffer, len)) {
+                    dma_unmap_single(tx_ring->dev,
+                                     dma_unmap_addr(tx_buffer, dma),
+                                     dma_unmap_len(tx_buffer, len),
+                                     DMA_TO_DEVICE);
+                }
+
+                /* reclaim the space in the header ring */
+                //BUG_ON (tx_buffer->hr_i == -1);
+                if (tx_buffer->hr_i_valid) {
+                    BUG_ON (tx_buffer->hr_i < 0);
+                    //pr_err("ixgbe_clean_tx_irq:\n");
+                    //pr_err(" hr_i: %zd, hr_count: %zd, hr_next_to_clean: %zd\n",
+                    //    tx_buffer->hr_i, tx_ring->hr_count, tx_ring->hr_next_to_clean);
+                    BUG_ON (tx_buffer->hr_i >= tx_ring->hr_count);
+                    BUG_ON (tx_buffer->hr_i != tx_ring->hr_next_to_clean);
+                    tx_ring->hr_next_to_clean++;
+                    if (tx_ring->hr_next_to_clean == tx_ring->hr_count)
+                        tx_ring->hr_next_to_clean = 0;
+                }
+
+                /* reclaim space used in the pkt ring */
+                if (tx_buffer->pktr_i_valid) {
+                    BUG_ON (tx_buffer->pktr_i_valid < 0);
+                    BUG_ON (tx_buffer->pktr_i >= tx_ring->pktr_count);
+                    BUG_ON (tx_buffer->pktr_i != tx_ring->pktr_next_to_clean);
+                    tx_ring->pktr_next_to_clean++;
+                    if (tx_ring->pktr_next_to_clean == tx_ring->pktr_count)
+                        tx_ring->pktr_next_to_clean = 0;
+                }
+
+                /* Remember how many null descriptors need to be skipped
+                 * before cleaning the tx_buffer. */
+                null_desc_count = tx_buffer->null_desc_count;
+                //pr_info (" null_desc_count: %d\n", null_desc_count);
 
 		/* clear tx_buffer data */
-		tx_buffer->skb = NULL;
-		dma_unmap_len_set(tx_buffer, len, 0);
+                ixgbe_tx_buffer_clean(tx_buffer);
 
 		/* unmap remaining buffers */
 		while (tx_desc != eop_desc) {
@@ -784,6 +889,41 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 					       DMA_TO_DEVICE);
 				dma_unmap_len_set(tx_buffer, len, 0);
 			}
+
+                        /* No fragments should be mapped if the buffer is not
+                         * the first buffer for the segment. */
+                        BUG_ON (dma_unmap_len(tx_buffer, frag_dma[0].flen) != 0);
+
+                        /* No sk_tbl_item should be set if the buffer is not
+                         * the first buffer for the segment. */
+                        //XXX: Can we guarantee this holds?  I feel like it
+                        // should, but it doesn't right now.
+                        //BUG_ON (tx_buffer->sk_tbl_item != NULL);
+
+                        /* Reclaim any buffers in the header ring. */
+                        if (tx_buffer->hr_i_valid) {
+                            BUG_ON (tx_buffer->hr_i < 0);
+                            BUG_ON (tx_buffer->hr_i >= tx_ring->hr_count);
+                            BUG_ON (tx_buffer->hr_i != tx_ring->hr_next_to_clean);
+                            tx_ring->hr_next_to_clean++;
+                            if (tx_ring->hr_next_to_clean == tx_ring->hr_count)
+                                tx_ring->hr_next_to_clean = 0;
+                        }
+
+                        /* reclaim space used in the pkt ring */
+                        if (tx_buffer->pktr_i_valid) {
+                            BUG_ON (tx_buffer->pktr_i_valid < 0);
+                            BUG_ON (tx_buffer->pktr_i >= tx_ring->pktr_count);
+                            BUG_ON (tx_buffer->pktr_i != tx_ring->pktr_next_to_clean);
+                            tx_ring->pktr_next_to_clean++;
+                            if (tx_ring->pktr_next_to_clean == tx_ring->pktr_count)
+                                tx_ring->pktr_next_to_clean = 0;
+                        }
+
+                        /* clear tx_buffer data */
+                        BUG_ON (tx_buffer->skb != NULL);
+                        BUG_ON (tx_buffer->next_to_watch != NULL);
+                        ixgbe_tx_buffer_clean(tx_buffer);
 		}
 
 		/* move us one more past the eop_desc for start of next pkt */
@@ -795,6 +935,33 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 			tx_buffer = tx_ring->tx_buffer_info;
 			tx_desc = IXGBE_TX_DESC(tx_ring, 0);
 		}
+
+                /* If there are null packets, skip them one at a time
+                 * to assert that they are in fact null descriptors */
+                /* If we set up valid tx_buffers for each null descriptor, this
+                 * code would not be necessary because of a discrepency between
+                 * the actual NIC functionality and what is specified by the
+                 * datasheet.  Specifically, the datasheet says that if the RS
+                 * bit is set in a null descriptor, then the DD field in the
+                 * status word is not written when hardware processes them.
+                 * However, experimentally, I have found that the hardware does
+                 * in fact write the DD bit when it is done processing a null
+                 * descriptor.  However, this approach seems better to me right
+                 * now anyways. */
+                while (null_desc_count > 0) {
+                    //pr_info (" Checking for nulldesc in desc: %d (%d)\n",
+                    //    i, i + tx_ring->count);
+                    BUG_ON (!ixgbe_is_tx_nulldesc(tx_desc));
+                    null_desc_count--;
+                    tx_buffer++;
+                    tx_desc++;
+                    i++;
+                    if (unlikely(!i)) {
+                            i -= tx_ring->count;
+                            tx_buffer = tx_ring->tx_buffer_info;
+                            tx_desc = IXGBE_TX_DESC(tx_ring, 0);
+                    }
+                }
 
 		/* issue prefetch for next Tx descriptor */
 		prefetch(tx_desc);
@@ -5591,6 +5758,18 @@ static void ixgbe_clean_tx_ring(struct ixgbe_ring *tx_ring)
 
 	/* Zero out the descriptor ring */
 	memset(tx_ring->desc, 0, tx_ring->size);
+
+        /* Zero out the header and packet rings */
+        memset(tx_ring->header_ring, 0, tx_ring->header_ring_len);
+        memset(tx_ring->pkt_ring, 0, tx_ring->pkt_ring_len);
+
+        /* Zero out the ring head and tail */
+	tx_ring->next_to_use = 0;
+	tx_ring->next_to_clean = 0;
+        tx_ring->hr_next_to_clean = 0;
+        tx_ring->hr_next_to_use = 0;
+        tx_ring->pktr_next_to_use = 0;
+        tx_ring->pktr_next_to_clean = 0;
 }
 
 /**
@@ -5944,6 +6123,18 @@ static int __devinit ixgbe_sw_init(struct ixgbe_adapter *adapter)
 		break;
 	}
 	set_bit(__IXGBE_DOWN, &adapter->state);
+
+        /* This function executes before the parameters are read */
+#if 0
+        /* DEBUG: Note what parameters are being used. */
+        pr_info ("ixgbe_sw_init:\n");
+        pr_info (" kern_gso_size: %u\n", adapter->kern_gso_size);
+        pr_info (" drv_gso_size: %u\n", adapter->drv_gso_size);
+        pr_info (" use_pkt_ring: %u\n", adapter->use_pkt_ring);
+        pr_info (" use_sgseg: %u\n", adapter->use_sgseg);
+        pr_info (" xmit_batch: %u\n", adapter->xmit_batch);
+#endif
+
 out:
 	return err;
 }
@@ -5971,6 +6162,29 @@ int ixgbe_setup_tx_resources(struct ixgbe_ring *tx_ring)
 		tx_ring->tx_buffer_info = vzalloc(size);
 	if (!tx_ring->tx_buffer_info)
 		goto err;
+ 
+        /* set the sizes and other variables of the header ring */
+        //TODO: at most only half of the descriptors can be used for
+        // packet headers, so this is guaranteed to overallocate memory.
+        //TODO: At most, only 1 in every 3 descriptors will use a header
+        // ring, so this is overallocates memory
+        tx_ring->hr_count = tx_ring->count; //TODO: set to something else?
+        //tx_ring->hr_count = tx_ring->count >> 1;
+        //TODO: round to 4K?
+        tx_ring->header_ring_len = tx_ring->hr_count * IXGBE_MAX_HDR_BYTES; //TODO: this would be faster with a shift
+
+        tx_ring->pktr_count = (tx_ring->count >> 1); /* At most every other descriptor can be a packet. */
+        tx_ring->pkt_ring_len = tx_ring->pktr_count * IXGBE_MAX_PKT_BYTES;
+
+        //DEBUG
+        //pr_info ("ixgbe_setup_tx_resources:\n");
+        //pr_info (" tx_ring->count: %d, pktr_count: %zd\n", tx_ring->count, tx_ring->pktr_count);
+
+        //TODO: move elsewhere?
+        BUG_ON(sizeof(struct ixgbe_pkt_hdr) != IXGBE_MAX_HDR_BYTES);
+        BUG_ON(sizeof(struct ixgbe_single_pkt) != IXGBE_MAX_PKT_BYTES);
+
+	u64_stats_init(&tx_ring->syncp);
 
 	/* round up to nearest 4K */
 	tx_ring->size = tx_ring->count * sizeof(union ixgbe_adv_tx_desc);
@@ -5981,16 +6195,70 @@ int ixgbe_setup_tx_resources(struct ixgbe_ring *tx_ring)
 					   tx_ring->size,
 					   &tx_ring->dma,
 					   GFP_KERNEL);
+
+        /* actually preallocate the header ring */
+        tx_ring->header_ring = dma_alloc_coherent(dev,
+                                                  tx_ring->header_ring_len,
+                                                  &tx_ring->header_ring_dma,
+                                                  GFP_KERNEL);
+
+        tx_ring->pkt_ring = dma_alloc_coherent(dev,
+                                               tx_ring->pkt_ring_len,
+                                               &tx_ring->pkt_ring_dma,
+                                               GFP_KERNEL);
+
 	set_dev_node(dev, orig_node);
 	if (!tx_ring->desc)
 		tx_ring->desc = dma_alloc_coherent(dev, tx_ring->size,
 						   &tx_ring->dma, GFP_KERNEL);
-	if (!tx_ring->desc)
+
+        if (!tx_ring->header_ring)
+            tx_ring->header_ring = dma_alloc_coherent(dev,
+                                                      tx_ring->header_ring_len,
+                                                      &tx_ring->header_ring_dma,
+                                                      GFP_KERNEL);
+
+        if (!tx_ring->pkt_ring)
+            tx_ring->pkt_ring = dma_alloc_coherent(dev,
+                                                   tx_ring->pkt_ring_len,
+                                                   &tx_ring->pkt_ring_dma,
+                                                   GFP_KERNEL);
+
+
+	if (!tx_ring->desc || !tx_ring->header_ring || !tx_ring->pkt_ring)
 		goto err;
+
+        /* Unnecessary? Should be zalloc'd? */
+	tx_ring->next_to_use = 0;
+	tx_ring->next_to_clean = 0;
+        tx_ring->hr_next_to_clean = 0;
+        tx_ring->hr_next_to_use = 0;
+        tx_ring->pktr_next_to_clean = 0;
+        tx_ring->pktr_next_to_use = 0;
 
 	return 0;
 
 err:
+        if (tx_ring->desc != NULL) {
+            dma_free_coherent(dev, tx_ring->size,
+                              tx_ring->desc, tx_ring->dma);
+            tx_ring->desc = NULL;
+        }
+
+        if (tx_ring->header_ring != NULL) {
+            dma_free_coherent(dev, tx_ring->header_ring_len,
+                              tx_ring->header_ring,
+                              tx_ring->header_ring_dma);
+            tx_ring->header_ring = NULL;
+        }
+
+        if (tx_ring->pkt_ring != NULL) {
+            dma_free_coherent(dev, tx_ring->pkt_ring_len,
+                              tx_ring->pkt_ring,
+                              tx_ring->pkt_ring_dma);
+            tx_ring->pkt_ring = NULL;
+        }
+
 	vfree(tx_ring->tx_buffer_info);
 	tx_ring->tx_buffer_info = NULL;
 	dev_err(dev, "Unable to allocate memory for the Tx descriptor ring\n");
@@ -6127,12 +6395,27 @@ void ixgbe_free_tx_resources(struct ixgbe_ring *tx_ring)
 	tx_ring->tx_buffer_info = NULL;
 
 	/* if not set, then don't free */
-	if (!tx_ring->desc)
-		return;
+	if (!tx_ring->desc) {
+            dma_free_coherent(tx_ring->dev, tx_ring->size,
+                              tx_ring->desc, tx_ring->dma);
+            tx_ring->desc = NULL;
+        }
 
-	dma_free_coherent(tx_ring->dev, tx_ring->size,
-			  tx_ring->desc, tx_ring->dma);
-	tx_ring->desc = NULL;
+        /* if not set, then don't free */
+        if (!tx_ring->header_ring) {
+            dma_free_coherent(tx_ring->dev, tx_ring->header_ring_len,
+                              tx_ring->header_ring,
+                              tx_ring->header_ring_dma);
+            tx_ring->header_ring = NULL;
+        }
+
+        /* if not set, then don't free */
+        if (!tx_ring->pkt_ring) {
+            dma_free_coherent(tx_ring->dev, tx_ring->pkt_ring_len,
+                              tx_ring->pkt_ring,
+                              tx_ring->pkt_ring_dma);
+            tx_ring->pkt_ring = NULL;
+        }
 }
 
 /**
@@ -6289,6 +6572,13 @@ static int ixgbe_open(struct net_device *netdev)
 #ifdef HAVE_VXLAN_CHECKS
 	vxlan_get_rx_port(netdev);
 #endif /* HAVE_VXLAN_CHECKS */
+
+        //XXX: DEBUG
+        /* Create a simple /proc file for exporting batch data to userspace.
+         * This would probably be better implemented as part of ethtool, but
+         * this seemed way easier for now. */
+        proc_create_data("ixgbe_batch_stats", 0, NULL, &ixgbe_batch_stats_proc_fops, netdev);
+
 	return IXGBE_SUCCESS;
 
 err_set_queues:
@@ -6327,6 +6617,11 @@ static void ixgbe_close_suspend(struct ixgbe_adapter *adapter)
 		ixgbe_down(adapter);
 	}
 	ixgbe_free_irq(adapter);
+
+        //XXX: DEBUG
+        /* Remove a simple /proc file for exporting batch data to userspace.
+         * */
+        remove_proc_entry("ixgbe_batch_stats", NULL);
 
 	ixgbe_free_all_rx_resources(adapter);
 	ixgbe_free_all_tx_resources(adapter);
@@ -7753,6 +8048,11 @@ static int ixgbe_tso(struct ixgbe_ring *tx_ring,
 	ixgbe_tx_ctxtdesc(tx_ring, vlan_macip_lens, 0, type_tucmd,
 			  mss_l4len_idx);
 
+        /* update first so that the context descriptor can be recreated. */
+        first->vlan_macip_lens = vlan_macip_lens;
+        first->type_tucmd = type_tucmd;
+        first->mss_l4len_idx = mss_l4len_idx;
+
 	return 1;
 #endif /* !NETIF_F_TSO */
 }
@@ -7906,7 +8206,7 @@ no_csum:
 	 ((u32)(_input & _flag) * (_result / _flag)) : \
 	 ((u32)(_input & _flag) / (_flag / _result)))
 
-static u32 ixgbe_tx_cmd_type(u32 tx_flags)
+u32 ixgbe_tx_cmd_type(u32 tx_flags)
 {
 	/* set type for advanced descriptor with frame checksum insertion */
 	u32 cmd_type = IXGBE_ADVTXD_DTYP_DATA |
@@ -7928,8 +8228,8 @@ static u32 ixgbe_tx_cmd_type(u32 tx_flags)
 	return cmd_type;
 }
 
-static void ixgbe_tx_olinfo_status(union ixgbe_adv_tx_desc *tx_desc,
-				   u32 tx_flags, unsigned int paylen)
+void ixgbe_tx_olinfo_status(union ixgbe_adv_tx_desc *tx_desc,
+			    u32 tx_flags, unsigned int paylen)
 {
 	u32 olinfo_status = paylen << IXGBE_ADVTXD_PAYLEN_SHIFT;
 
@@ -7976,16 +8276,13 @@ static int __ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size)
 	return 0;
 }
 
-static inline int ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size)
+inline int ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size)
 {
 	if (likely(ixgbe_desc_unused(tx_ring) >= size))
 		return 0;
 
 	return __ixgbe_maybe_stop_tx(tx_ring, size);
 }
-
-#define IXGBE_TXD_CMD (IXGBE_TXD_CMD_EOP | \
-		       IXGBE_TXD_CMD_RS)
 
 static void ixgbe_tx_map(struct ixgbe_ring *tx_ring,
 			 struct ixgbe_tx_buffer *first,
@@ -8144,8 +8441,987 @@ dma_error:
 	tx_ring->next_to_use = i;
 }
 
-static void ixgbe_atr(struct ixgbe_ring *ring,
-		      struct ixgbe_tx_buffer *first)
+static int ixgbe_tx_prepare_skb_sgsegs(struct ixgbe_ring *tx_ring,
+                                       struct ixgbe_tx_buffer *first)
+{
+        struct sk_buff *skb = first->skb;
+	struct skb_frag_struct *frag;
+        struct ixgbe_tx_buffer *tx_buffer;
+	unsigned int size;
+        unsigned int frag_i;
+	dma_addr_t dma;
+	u16 i = tx_ring->next_to_use;
+
+        /* Perform all DMA mapping as a batch because they will all
+         * eventually need to be performed. */
+
+        /* assert that this tx_buffer was cleaned properly */
+        BUG_ON (first->len != 0);
+
+        /* First map the skb head. */
+	size = skb_headlen(skb);
+	dma = dma_map_single(tx_ring->dev, skb->data, size, DMA_TO_DEVICE);
+        if (dma_mapping_error(tx_ring->dev, dma))
+                goto dma_error;
+        dma_unmap_len_set(first, len, size);
+        dma_unmap_addr_set(first, dma, dma);
+
+        /* DEBUG */
+        //pr_info ("ixgbe_tx_prepare_skb_sgsegs:\n");
+        //pr_info (" nr_frags: %d\n", skb_shinfo(skb)->nr_frags);
+
+        /* Then map all of the fragments. */
+        frag_i = 0;
+	for (frag = &skb_shinfo(skb)->frags[0];; frag++) {
+                /* Sanity check. */
+                //XXX: This is dumb.  I should write this for loop diferently.
+                // How about "for (frag_i = 0; frag_i < skb_shinfo(skb)->nr_frags; frag_i++)"
+                BUG_ON (frag_i >= MAX_SKB_FRAGS);
+                if (frag_i == skb_shinfo(skb)->nr_frags)
+                    break;
+
+                /* map the fragment. */
+		size = skb_frag_size(frag);
+		dma = skb_frag_dma_map(tx_ring->dev, frag, 0, size,
+				       DMA_TO_DEVICE);
+
+                /* check for errors. */
+                if (dma_mapping_error(tx_ring->dev, dma))
+                        goto dma_error;
+
+                /* assert that this tx_buffer was cleaned properly */
+                BUG_ON (first->frag_dma[frag_i].flen != 0);
+
+		/* record length, and DMA address */
+		dma_unmap_len_set(first, frag_dma[frag_i].flen, size);
+		dma_unmap_addr_set(first, frag_dma[frag_i].fdma, dma);
+
+                /* DEBUG */
+                //pr_info (" size: %d\n", size);
+                //pr_info (" frag_i: %d\n", frag_i);
+                //pr_info (" frag_dma[frag_i].flen: %d\n", first->frag_dma[frag_i].flen);
+
+                /* iterating without a loop variable and then updating it at
+                 * the end is dumb. */
+                frag_i++;
+        }
+
+        return 0; 
+
+dma_error:
+	dev_err(tx_ring->dev, "TX DMA map failed\n");
+        pr_err ("ixgbe_tx_prepare_skb_sgsegs: TX DMA map failed\n");
+
+        /* Assert that only one descriptor has been used. */
+	i = tx_ring->next_to_use;
+        if (i == 0)
+            i = tx_ring->count;
+        i--;
+        BUG_ON (&tx_ring->tx_buffer_info[i] != first);
+
+
+        /* Clean up succesful mappings and free the skb, both of which should
+         * be done by ixgbe_unmap_and_free_tx_resource */
+	i = tx_ring->next_to_use;
+	for (;;) {
+		tx_buffer = &tx_ring->tx_buffer_info[i];
+		ixgbe_unmap_and_free_tx_resource(tx_ring, tx_buffer);
+		if (tx_buffer == first)
+			break;
+		if (i == 0)
+			i = tx_ring->count;
+		i--;
+	}
+
+        tx_ring->next_to_use = i;
+
+        return -1;
+}
+
+//TODO: BUG: This function does not properly handle TCP packets with the PSH or
+// FIN flag set.  This should be fixed, but doesn't currently seem to be a
+// problem.
+static void ixgbe_tx_enqueue_sgsegs(struct ixgbe_ring *tx_ring,
+                                    struct ixgbe_tx_buffer *first,
+                                    const u8 hdr_len,
+                                    u32 data_len,
+                                    u32 data_offset)
+{
+	struct sk_buff *skb = first->skb;
+	struct ixgbe_tx_buffer *tx_buffer;
+	union ixgbe_adv_tx_desc *tx_desc;
+        struct ixgbe_pkt_hdr *tx_hdr;
+	struct skb_frag_struct *frag;
+	dma_addr_t dma;
+        u32 size;
+        u32 frag_offset, frag_size, frag_i;
+        u32 seq_offset, seqno;
+        u32 tx_flags = first->tx_flags;
+        u32 cmd_type = ixgbe_tx_cmd_type(tx_flags);
+        u16 i = tx_ring->next_to_use;
+        size_t hr_i = tx_ring->hr_next_to_use;
+
+        //XXX: DEBUG
+        //pr_info ("ixgbe_tx_enqueue_sgsegs:\n");
+        //pr_info (" start ntu: %d <%x>, hr_ntu: %zd:\n",
+        //         tx_ring->next_to_use, tx_ring->next_to_use,
+        //         tx_ring->hr_next_to_use);
+
+        /* This function should not be used to try to transmit more data than
+         * is in a single skb. */
+        BUG_ON ((data_offset + data_len) > (skb->len - hdr_len));
+
+	tx_desc = IXGBE_TX_DESC(tx_ring, i);
+        tx_hdr = IXGBE_TX_HDR(tx_ring, hr_i);
+
+        /* XXX: Currently, the first context descriptor has already been
+         *  created by the initial call to ixgbe_tso, so we do not need to
+         *  create it again.  Similarly, the packet header does not need to be
+         *  copied for the first packet. */
+        if (data_offset == 0) {
+
+                /* The first data descriptor must contain the entire length of
+                 * the TSO segment. */
+                ixgbe_tx_olinfo_status(tx_desc, tx_flags, data_len);
+            
+                /* In the first segment, we can enqueue a packet header and
+                 * data in a single segment if they are located in the skb
+                 * head, although I don't expect this to often be the case. */
+                size = hdr_len + data_len; 
+                if (likely(size > skb_headlen(skb))) {
+                        size = skb_headlen(skb);
+                }
+
+                //DEBUG: Print out some variables of interest
+                //pr_info ("ixgbe_tx_enqueue_sgsegs: data_offset == 0\n");
+                //pr_info (" size: %d, skb_headlen(skb): %d\n", size, skb_headlen (skb));
+
+                BUG_ON (size > IXGBE_MAX_DATA_PER_TXD);
+                BUG_ON (size > first->len);
+                BUG_ON (first->len != skb_headlen (skb));
+                BUG_ON (size != first->len); // Sending a first segment
+                                             // smaller than skb_headlen
+                                             // (first->len) shouldn't be
+                                             // allowed.
+
+                /* Update the first tx data descriptor */
+                dma = first->dma;
+                tx_desc->read.buffer_addr = cpu_to_le64(dma);
+		tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type ^ size);
+
+                //pr_info (" used desc: %d\n", i);
+
+                /* Update the amount of data left to be sent. */
+                //XXX: Don't screw up! size includes hdr_len right now! Is
+                // this right?
+                BUG_ON (data_len < (size - hdr_len));
+                data_len -= (size - hdr_len);
+                data_offset += (size - hdr_len);
+
+                //DEBUG: how much data is left after enqueuing the skb head?
+                //pr_info (" remaining data_len: %d\n", data_len);
+                //pr_info (" new data_offset: %d\n", data_offset);
+
+                /* If it is possible that we are done enqueueing data.  Before
+                 * updating i and tx_desc, we should goto the last descriptor
+                 * code */
+                if (data_len == 0) {
+                        goto last_desc;
+                }
+
+
+                /* Move to the next descriptor */
+		i++;
+		tx_desc++;
+		if (i == tx_ring->count) {
+			tx_desc = IXGBE_TX_DESC(tx_ring, 0);
+			i = 0;
+		}
+		tx_desc->read.olinfo_status = 0;
+        } else {
+                /* XXX: ixgbe_tx_ctxtdesc requires that tx_ring->next_to_use
+                 * is up to date. */
+                BUG_ON (tx_ring->next_to_use != i); //Just set above?
+                tx_ring->next_to_use = i;
+
+                /* Create the context descriptor. */
+                ixgbe_tx_ctxtdesc(tx_ring, first->vlan_macip_lens, 0,
+                                  first->type_tucmd, first->mss_l4len_idx);
+
+                //pr_info (" used desc: %d\n", i);
+
+                /* Update the current descriptor. */
+                i++;
+                tx_desc++;
+                if (i == tx_ring->count) {
+                        tx_desc = IXGBE_TX_DESC(tx_ring, 0);
+                        i = 0;
+                }
+                tx_desc->read.olinfo_status = 0;
+                tx_buffer = &tx_ring->tx_buffer_info[i];
+                tx_buffer->hr_i = -1;
+                tx_buffer->hr_i_valid = false;
+
+                /* ixgbe_tx_ctxtdesc increases tx_ring->next_to_use.  Assert
+                 * that this happened. */
+                BUG_ON (i != tx_ring->next_to_use);
+
+                // DEBUG: Some sanity checking before using header rings
+                BUG_ON (hdr_len > IXGBE_MAX_HDR_BYTES);
+                BUG_ON (hdr_len == 0); // TSO requires header lens. This
+                                       // function requires TSO
+
+                /* Create the descriptor for the header.  The first data
+                 * descriptor must contain the entire length of the TSO
+                 * segment (data_len). */
+                ixgbe_tx_olinfo_status(tx_desc, tx_flags, data_len);
+
+                /* Copy the header to a header ring and update the TCP
+                 * sequence number given the current data offset. */
+                memcpy(tx_hdr->raw, skb->data, hdr_len);
+                seq_offset = skb_transport_offset (skb) + 4;
+                BUG_ON (seq_offset + 4 >= hdr_len);
+                seqno = be32_to_cpu(*((__be32 *) &tx_hdr->raw[seq_offset]));
+
+                //DEBUG: Are the sequence numbers reasonable?
+                //pr_info ("ixgbe_tx_enqueue_sgsegs:\n");
+                //pr_info (" data_offset: %u\n", data_offset);
+                //pr_info (" before seqno: %u\n", seqno);
+
+                /* Finish updating the sequence number in the header ring. */
+                seqno += data_offset; // Do I need to do anything else?
+
+                //DEBUG: 
+                //pr_info (" after seqno: %u\n", seqno);
+
+                //DEBUG: Do we actually have a correct pointer to the TCP header?
+                //u16 port;
+                //port = be16_to_cpu(*((__be16 *) &tx_hdr->raw[skb_transport_offset (skb)]));
+                //pr_info (" src port: %u\n", port);
+                //port = be16_to_cpu(*((__be16 *) &tx_hdr->raw[skb_transport_offset (skb) + 2]));
+                //pr_info (" dst port: %u\n", port);
+                //pr_info (" ackno: %u\n", be32_to_cpu(*((__be32 *) &tx_hdr->raw[seq_offset + 4])));
+
+                /* Update set the new seqno. */
+                *((__be32 *) &tx_hdr->raw[seq_offset]) = cpu_to_be32(seqno);
+
+                /* Get the DMA address of the header in the ring. */
+                dma = tx_ring->header_ring_dma + IXGBE_TX_HDR_OFFSET(hr_i);
+
+                /* Create the descriptor for the header data. */
+                tx_buffer->hr_i = hr_i;
+                tx_buffer->hr_i_valid = true;
+                tx_desc->read.buffer_addr = cpu_to_le64(dma);
+                tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type ^ hdr_len);
+
+                /* Update the pointer to the next header ring */
+                hr_i++;
+                if (hr_i == tx_ring->hr_count)
+                        hr_i = 0;
+                tx_hdr = IXGBE_TX_HDR(tx_ring, hr_i);
+
+                //pr_info (" used desc: %d\n", i);
+
+                /* Update the current descriptor. */
+                i++;
+                tx_desc++;
+                if (i == tx_ring->count) {
+                        tx_desc = IXGBE_TX_DESC(tx_ring, 0);
+                        i = 0;
+                }
+                tx_desc->read.olinfo_status = 0;
+                tx_buffer = &tx_ring->tx_buffer_info[i];
+                tx_buffer->hr_i = -1;
+                tx_buffer->hr_i_valid = false;
+        }
+
+
+        /*
+         * Send data_len of data starting at data_offset
+         */
+        //pr_info ("ixgbe_tx_enqueue_sgsegs:\n");
+        //pr_info (" sending data_len (%d) starting at data_offset (%d)\n",
+        //         data_len, data_offset);
+
+        /* This function currently assumes that there is at least one more
+         * data descriptor to be created at this point. */
+        BUG_ON (data_len == 0); // This function should only be called
+                                // for things that should be TSO
+                                // segments
+
+        /* All the data from the skb_head should have been enqueued already.
+         * If this is not the case, then the code below needs to be written
+         * differently to handle this case. */
+        //XXX: I don't actually require this to hold, although perhaps the
+        // code coulde be sped up if this was required.?
+        //BUG_ON (data_offset < (skb_headlen(skb) - hdr_len));
+
+        /* This assumes that there was some skb_head mapped. */
+        BUG_ON (first->len == 0);
+
+        size = (skb_headlen(skb) - hdr_len);
+        dma = first->dma + hdr_len;
+        frag_offset = 0;
+        frag_i = 0;
+        frag_size = size;
+	for (frag = &skb_shinfo(skb)->frags[0];; frag++) {
+                //pr_err ("ixgbe_tx_enqueue_sgsegs: nr_frags: %d\n",
+                //        skb_shinfo(skb)->nr_frags);
+                //pr_err (" frag_i: %d\n", frag_i);
+
+                /* We should always break before the reaching past the last
+                 * fragment because we've run out of data. */
+                // This can loop around so that frag_i == nr_frags, but it
+                // should never loop once more than that.
+                BUG_ON (frag_i > skb_shinfo(skb)->nr_frags);
+
+                //DEBUG
+                //pr_info ("ixgbe_tx_enqueue_sgsegs: frag loop\n");
+                //pr_info (" frag_offset: %d\n", frag_offset);
+                //pr_info (" data_offset: %d\n", data_offset);
+                //pr_info (" data_len: %d\n", data_len);
+                //pr_info (" size: %d\n", size);
+        
+                if (data_offset < (frag_offset + size)) {
+                    /* Pick the right dma address and size. */
+                    BUG_ON (frag_offset > data_offset);
+                    dma += (data_offset - frag_offset);
+                    size -= (data_offset - frag_offset);
+                    BUG_ON (size == 0);
+                    if (size > data_len)
+                        size = data_len;
+
+                    /* Update how much data we have sent and what offset we
+                     * are currently at. Because we will enqueue at least
+                     * size data right now. */
+                    data_len -= size;
+                    data_offset += size;
+
+                    /* Since all mapps are performed in advance, nothing
+                     * needs to be noted in the tx_buffer. */
+
+                    /* Add the address to the descriptor */
+                    tx_desc->read.buffer_addr = cpu_to_le64(dma);
+
+                    while (unlikely(size > IXGBE_MAX_DATA_PER_TXD)) {
+                            tx_desc->read.cmd_type_len =
+                                    cpu_to_le32(cmd_type ^ IXGBE_MAX_DATA_PER_TXD);
+                            //pr_info (" used desc: %d\n", i);
+
+                            i++;
+                            tx_desc++;
+                            if (i == tx_ring->count) {
+                                    tx_desc = IXGBE_TX_DESC(tx_ring, 0);
+                                    i = 0;
+                            }
+                            tx_desc->read.olinfo_status = 0;
+
+                            dma += IXGBE_MAX_DATA_PER_TXD;
+                            size -= IXGBE_MAX_DATA_PER_TXD;
+
+                            tx_desc->read.buffer_addr = cpu_to_le64(dma);
+                    }
+                    
+                    //pr_info (" used desc: %d\n", i);
+
+                    //pr_info ("ixgbe_tx_enqueue_sgsegs: transmitted data.\n");
+                    //pr_info (" new data_len: %d, data_offset: %d\n",
+                    //         data_len, data_offset);
+
+                    if (!data_len)
+                            break;
+
+                    tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type ^ size);
+
+                    i++;
+                    tx_desc++;
+                    if (i == tx_ring->count) {
+                            tx_desc = IXGBE_TX_DESC(tx_ring, 0);
+                            i = 0;
+                    }
+                    tx_desc->read.olinfo_status = 0;
+
+                }
+
+                /* Update our frag_offset even if data has not been sent. */
+                frag_offset += frag_size;
+
+                /* Update loop variables for the next fragment */
+                frag_size = skb_frag_size(frag);
+		size = frag_size;
+                //XXX: Trying to copy the FCOE code from the existing code
+                // leads to a bug.  The above code already limits the size to
+                // data_size anyways, so there shouldn't be any problems.
+
+		dma = first->frag_dma[frag_i].fdma;
+                BUG_ON (first->frag_dma[frag_i].flen != frag_size);
+
+		tx_buffer = &tx_ring->tx_buffer_info[i];
+                tx_buffer->hr_i = -1;
+                tx_buffer->hr_i_valid = false;
+
+                /* iterating without a loop variable and then updating it at
+                 * the end is dumb. */
+                frag_i++;
+	}
+
+last_desc:
+        /* DEBUG: Error checking that we sent all of the data */
+        //TODO
+
+	/* write last descriptor with RS and EOP bits */
+	cmd_type |= size | IXGBE_TXD_CMD;
+	tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type);
+
+        /* Move on to the next descriptor after finishing setting the flags
+         * for the last data descriptor. */
+	i++;
+	if (i == tx_ring->count)
+		i = 0;
+
+        /* Assert only zero or one hr has been used. */
+        //pr_info ("ixgbe_tx_enqueue_sgsegs: hr_i: %zd, hr_next_to_use: %zd\n",
+        //         hr_i, tx_ring->hr_next_to_use);
+        BUG_ON (!((hr_i == tx_ring->hr_next_to_use) ||
+                 (hr_i == ((tx_ring->hr_next_to_use + 1) == tx_ring->hr_count)
+                  ? 0 : tx_ring->hr_next_to_use + 1)));
+
+        /* Update the ring with the descriptors we've used. */
+	tx_ring->next_to_use = i;
+        tx_ring->hr_next_to_use = hr_i;
+
+        //DEBUG:
+        //pr_info ("ixgbe_tx_enqueue_sgsegs:\n");
+        //pr_info (" end ntu: %d, hr_ntu: %zd:\n",
+        //         tx_ring->next_to_use, tx_ring->hr_next_to_use);
+
+        return;
+}
+
+static void ixgbe_tx_map_sgsegs(struct ixgbe_ring *tx_ring,
+			        struct ixgbe_tx_buffer *first,
+			        const u8 hdr_len,
+                                u32 drv_gso_size)
+{
+        struct sk_buff *skb = first->skb;
+	union ixgbe_adv_tx_desc *tx_desc;
+	int err = 0;
+        unsigned short gso_seg = 0;
+        u32 data_offset = 0;
+        u32 pkt_data_len;
+        u32 data_len = skb->len - hdr_len;
+        //TODO: This should be configurable by a parameter in the future
+        //TODO: This is a parameter now.  However, it may be better to have the
+        // parameter include headers and the value used here to not include
+        // packet headers.  So this maybe should be changed instead of removed
+        //u32 drv_gso_size = skb_shinfo(skb)->gso_size;
+        //u32 drv_gso_size = 16384;  
+        u32 drv_gso_segs = DIV_ROUND_UP(data_len, drv_gso_size);
+        u16 last_used;
+
+        /* Quick sanity check. */
+        BUG_ON (hdr_len > IXGBE_MAX_HDR_BYTES);
+
+        //XXX: Because ixgbe_tso has already been called, our starting
+        // descriptor is actually one earlier.
+        //u16 start_ntu = tx_ring->next_to_use;
+        //u16 end_ntu;
+
+        //DEBUG
+        //pr_err ("ixgbe_tx_map_sgsegs:\n");
+        //pr_err (" first->gso_segs: %d\n", first->gso_segs);
+        //pr_err (" drv_gso_size: %d\n", drv_gso_size);
+        //pr_err (" hdr_len: %d\n", hdr_len);
+        //pr_err (" data_len: %d\n", data_len);
+
+        /* dma map all of the necessary fragments at once. */
+        err = ixgbe_tx_prepare_skb_sgsegs (tx_ring, first);
+        if (err) {
+            pr_err ("Dropping segment due to prepare errors (DMA)\n");
+            return;
+        }
+
+        /* TODO: possibly copy all of the headers for all of the segments at
+         * once now as well. */
+        //XXX: This could actually lead to a bug because the current way the
+        // header ring is tracked requires that header ring spaces are
+        // allocated only just before a descriptor using them is written.
+
+        //NOTE: I'm not sure that generating TSO context descriptors for a
+        // single MTU sized packet will work correctly, but I'm going to try
+        // for now.
+        
+        //for (gso_seg = 0; gso_seg < first->gso_segs; gso_seg++) {
+        for (gso_seg = 0; gso_seg < drv_gso_segs; gso_seg++) {
+            pkt_data_len = min_t(u32, drv_gso_size, data_len);
+
+            /* DEBUG: error checking that we are actually going to send
+             * exactly gso_segs packets. */
+            BUG_ON (pkt_data_len == 0);
+
+            ixgbe_tx_enqueue_sgsegs (tx_ring, first, hdr_len, pkt_data_len,
+                                     data_offset);
+
+            data_offset += pkt_data_len;
+            data_len -= pkt_data_len;
+
+            /* Assertions */
+            if (pkt_data_len < drv_gso_size)
+                BUG_ON (gso_seg != (drv_gso_segs - 1));
+        }
+
+        //DEBUG: Sanity check that we sent all data
+        BUG_ON (data_len != 0);
+        BUG_ON (data_offset != (skb->len - hdr_len));
+
+        /* set next_to_watch value to the last enqueued descriptor.  This is
+         * currently crucial to avoiding deallocating or unmapping data too
+         * early.  In the future, the data should be stored in the last
+         * buffer for freeing, not the first. */
+        last_used = tx_ring->next_to_use;
+        if (last_used == 0)
+            last_used = tx_ring->count;
+        last_used--;
+        tx_desc = IXGBE_TX_DESC(tx_ring, last_used);
+	first->next_to_watch = tx_desc;
+
+        /* Update bytecounts and timestamps now that we have finished sending
+         * the entire segment. */
+	netdev_tx_sent_queue(txring_txq(tx_ring), first->bytecount);
+	first->time_stamp = jiffies;
+
+	/*
+	 * Force memory writes to complete before letting h/w know there
+	 * are new descriptors to fetch.  (Only applicable for weak-ordered
+	 * memory model archs, such as IA-64).
+	 *
+	 * We also need this memory barrier to make certain all of the
+	 * status bits have been updated before next_to_watch is written.
+	 */
+	wmb();
+
+        /* Check if xmit should stop. */
+	ixgbe_maybe_stop_tx(tx_ring, DESC_NEEDED);
+
+        /* If xmit ist stopping or there is not more data impending, notify the
+         * NIC of the new packets. */
+	if (netif_xmit_stopped(txring_txq(tx_ring)) || !skb->xmit_more) {
+		writel(tx_ring->next_to_use, tx_ring->tail);
+
+		/* we need this if more than one processor can write to our tail
+		// * at a time, it synchronizes IO on IA64/Altix systems
+		 */
+		mmiowb();
+	}
+
+        //DEBUG: how many descriptors were actually consumed?
+        //end_ntu = tx_ring->next_to_use;
+        //pr_info ("ixgbe_tx_map_sgsegs:\n");
+        //pr_info (" start_ntu: %d\n", start_ntu);
+        //pr_info (" end_ntu: %d\n", end_ntu);
+
+        return;
+}
+
+static void ixgbe_tx_enqueue_pkt_ring(struct ixgbe_ring *tx_ring,
+                                      struct ixgbe_tx_buffer *first,
+                                      const u8 hdr_len,
+                                      u32 data_len,
+                                      u32 data_offset)
+{
+        struct sk_buff *skb = first->skb;
+        struct ixgbe_tx_buffer *tx_buffer;
+        union ixgbe_adv_tx_desc *tx_desc;
+        struct ixgbe_single_pkt *tx_pkt;
+        dma_addr_t dma;
+        u32 size;
+        u32 seq_offset, seqno;
+        u32 tx_flags = first->tx_flags;
+        u32 tot_len = (data_len + hdr_len);
+        u32 cmd_type = ixgbe_tx_cmd_type(tx_flags);
+        u16 i = tx_ring->next_to_use;
+        size_t pktr_i = tx_ring->pktr_next_to_use;
+        u8 *pktr_buf;
+        u8 *skb_buf;
+        
+        //XXX: If copying ourselves solves our problem, move this above
+	struct skb_frag_struct *frag;
+        u32 frag_offset, frag_size, frag_i;
+
+        //DEBUG
+        //pr_info ("ixgbe_tx_enqueue_pkt_ring:\n");
+        //pr_info (" start ntu: %d, pktr_ntu: %zd:\n",
+        //         tx_ring->next_to_use, tx_ring->pktr_next_to_use);
+
+        /* Assert this function is called correctly. */
+        BUG_ON ((data_offset + data_len) > (skb->len - hdr_len));
+        BUG_ON ((data_len + hdr_len) > IXGBE_MAX_PKT_BYTES);
+        BUG_ON (IXGBE_MAX_PKT_BYTES > IXGBE_MAX_DATA_PER_TXD);
+
+        /* Get the descriptor and the buffer in the pkt ring */
+        tx_desc = IXGBE_TX_DESC(tx_ring, i);
+        tx_pkt = IXGBE_TX_PKT(tx_ring, pktr_i);
+        tx_buffer = &tx_ring->tx_buffer_info[i];
+        pktr_buf = tx_pkt->raw;
+
+        /* XXX: Currently, the first context descriptor has already been
+         *  created by the initial call to ixgbe_tso, so we do not need to
+         *  create it again.  Similarly, the packet header does not need to be
+         *  copied for the first packet. */
+        if (data_offset == 0) {
+
+                /* The first data descriptor must contain the entire length of
+                 * the TSO segment. */
+                //XXX: duplicated code
+                ixgbe_tx_olinfo_status(tx_desc, tx_flags, data_len);
+            
+                /* In the first segment, we can enqueue a packet header and
+                 * data in a single segment if they are located in the skb
+                 * head, although I don't expect this to often be the case. */
+                size = hdr_len + data_len; 
+                if (likely(size > skb_headlen(skb))) {
+                        size = skb_headlen(skb);
+                }
+
+                //DEBUG: Print out some variables of interest
+                //pr_info ("ixgbe_tx_enqueue_pkt_ring: data_offset == 0\n");
+                //pr_info (" size: %d, skb_headlen(skb): %d\n", size, skb_headlen (skb));
+
+                /* Unnecessary assertions. */
+                BUG_ON (size > IXGBE_MAX_DATA_PER_TXD);
+                BUG_ON (size > IXGBE_MAX_PKT_BYTES);
+
+                /* We already know from where the tx_ring will DMA and how long the
+                 * buffer will be. But delay setting it here to avoid code duplication */
+
+                /* Copy the data and update the buffer for the remaining data. */
+                memcpy(pktr_buf, skb->data, size);
+                pktr_buf += size;
+
+                /* Update the amount of data left to be sent. */
+                //XXX: Don't screw up! size includes hdr_len right now! Is
+                // this right?
+                data_len -= (size - hdr_len);
+                data_offset += (size - hdr_len);
+
+                /* If it is possible that we are done enqueueing data, then
+                 * the tx descriptors have not been set right.  For now, just
+                 * assert that there is always more data.  */
+                //TODO: Before updating i and tx_desc, goto last descriptor
+                // code
+                BUG_ON (data_len == 0); // This function should only be called
+                                        // for things that should be TSO
+                                        // segments
+
+                //DEBUG: how much data is left after enqueuing the skb head?
+                //pr_info (" remaining data_len: %d\n", data_len);
+                //pr_info (" new data_offset: %d\n", data_offset);
+        } else {
+                /* XXX: ixgbe_tx_ctxtdesc requires that tx_ring->next_to_use
+                 * is up to date. */
+                BUG_ON (tx_ring->next_to_use != i); //Just set above?
+                tx_ring->next_to_use = i;
+
+                /* Create the context descriptor. */
+                ixgbe_tx_ctxtdesc(tx_ring, first->vlan_macip_lens, 0,
+                                  first->type_tucmd, first->mss_l4len_idx);
+
+                //pr_info (" used desc: %d\n", i);
+
+                /* Update the current descriptor. */
+                i++;
+                tx_desc++;
+                if (i == tx_ring->count) {
+                        tx_desc = IXGBE_TX_DESC(tx_ring, 0);
+                        i = 0;
+                }
+                tx_desc->read.olinfo_status = 0;
+                tx_buffer = &tx_ring->tx_buffer_info[i];
+                tx_buffer->pktr_i = -1;
+                tx_buffer->pktr_i_valid = false;
+
+                /* ixgbe_tx_ctxtdesc increases tx_ring->next_to_use.  Assert
+                 * that this happened. */
+                BUG_ON (i != tx_ring->next_to_use);
+
+                /* Create the descriptor for the header.  The first data
+                 * descriptor must contain the entire length of the TSO
+                 * segment (data_len). */
+                //XXX: duplicated code
+                ixgbe_tx_olinfo_status(tx_desc, tx_flags, data_len);
+
+                /* Copy the header to a header ring and update the TCP
+                 * sequence number given the current data offset. */
+                memcpy(pktr_buf, skb->data, hdr_len);
+                seq_offset = skb_transport_offset (skb) + 4;
+                BUG_ON (seq_offset + 4 >= hdr_len);
+                seqno = be32_to_cpu(*((__be32 *) &pktr_buf[seq_offset]));
+
+                //DEBUG: Are the sequence numbers reasonable?
+                //pr_info ("ixgbe_tx_enqueue_pkt_ring:\n");
+                //pr_info (" data_offset: %u\n", data_offset);
+                //pr_info (" before seqno: %u\n", seqno);
+
+                seqno += data_offset; // Do I need to do anything else?
+                *((__be32 *) &pktr_buf[seq_offset]) = cpu_to_be32(seqno);
+
+                //DEBUG: 
+                //pr_info (" after seqno: %u\n", seqno);
+
+                //DEBUG: Do we actually have a correct pointer to the TCP header?
+                //u16 port;
+                //port = be16_to_cpu(*((__be16 *) &pktr_buf[skb_transport_offset (skb)]));
+                //pr_info (" src port: %u\n", port);
+                //port = be16_to_cpu(*((__be16 *) &pktr_buf[skb_transport_offset (skb) + 2]));
+                //pr_info (" dst port: %u\n", port);
+                //pr_info (" ackno: %u\n", be32_to_cpu(*((__be32 *) &pktr_buf[seq_offset + 4])));
+
+                /* Update the pktr_buf pointer */
+                pktr_buf += hdr_len;
+        }
+
+
+        /*
+         * Send data_len of data starting at data_offset
+         */
+        //pr_info ("ixgbe_tx_enqueue_pkt_ring:\n");
+        //pr_info (" sending data_len (%d) starting at data_offset (%d)\n",
+        //         data_len, data_offset);
+
+        /* This function currently assumes that there is at least one more
+         * data descriptor to be created at this point. */
+        BUG_ON (data_len == 0); // This function should only be called
+                                // for things that should be TSO
+                                // segments
+
+        size = (skb_headlen(skb) - hdr_len);
+        skb_buf = skb->data;
+        skb_buf += hdr_len;
+        frag_offset = 0;
+        frag_i = 0;
+        frag_size = size;
+	for (frag = &skb_shinfo(skb)->frags[0];; frag++) {
+                //pr_err ("ixgbe_tx_enqueue_pkt_hdr: nr_frags: %d\n",
+                //        skb_shinfo(skb)->nr_frags);
+                //pr_err (" frag_i: %d\n", frag_i);
+
+                /* We should always break before the reaching past the last
+                 * fragment because we've run out of data. */
+                // This can loop around so that frag_i == nr_frags, but it
+                // should never loop once more than that.
+                BUG_ON (frag_i > skb_shinfo(skb)->nr_frags);
+
+                //DEBUG
+                //pr_info ("ixgbe_tx_enqueue_pkt_hdr: frag loop\n");
+                //pr_info (" frag_offset: %d\n", frag_offset);
+                //pr_info (" data_offset: %d\n", data_offset);
+                //pr_info (" data_len: %d\n", data_len);
+                //pr_info (" size: %d\n", size);
+        
+                if (data_offset < (frag_offset + size)) {
+
+                    /* Pick the right buffer address and size. */
+                    BUG_ON (frag_offset > data_offset);
+                    skb_buf += (data_offset - frag_offset);
+                    size -= (data_offset - frag_offset);
+                    BUG_ON (size == 0);
+                    if (size > data_len)
+                        size = data_len;
+
+                    /* Copy the data. */
+                    memcpy (pktr_buf, skb_buf, size);
+
+                    /* Update how much data we have copied and what offset we
+                     * are currently at. Because we will enqueue at least size
+                     * data right now. */
+                    data_len -= size;
+                    data_offset += size;
+                    pktr_buf += size;
+
+                    if (!data_len)
+                            break;
+                }
+
+                /* Update our frag_offset even if data has not been sent. */
+                frag_offset += frag_size;
+
+                /* Update loop variables for the next fragment */
+                frag_size = skb_frag_size(frag);
+		size = frag_size;
+                //XXX: Trying to copy the FCOE code from the existing code
+                // leads to a bug.  The above code already limits the size to
+                // data_size anyways, so there shouldn't be any problems.
+
+                /* Assert that the fragment is mapped and find its address. */
+                skb_buf = page_address(frag->page.p);
+                BUG_ON (skb_buf == NULL);
+
+                /* iterating without a loop variable and then updating it at
+                 * the end is dumb. */
+                frag_i++;
+	}
+
+        /* DEBUG: Error checking that we sent all of the data */
+        BUG_ON (data_len != 0);
+        //TODO
+
+        /* Both code paths create the first data descriptor in the same way in
+         * this code. */
+        BUG_ON (pktr_i != tx_ring->pktr_next_to_use);
+        BUG_ON (tx_buffer->pktr_i_valid);
+        tx_buffer->pktr_i = pktr_i;
+        tx_buffer->pktr_i_valid = true;
+        dma = tx_ring->pkt_ring_dma + IXGBE_TX_PKT_OFFSET(pktr_i);
+        tx_desc->read.buffer_addr = cpu_to_le64(dma);
+
+        /* write last descriptor with RS and EOP bits */
+        //TODO: Should only EOP be set unless this is the last packet?
+        // Currently this sets both EOP and RS.
+        cmd_type |= (tot_len | IXGBE_TXD_CMD);
+        tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type);
+
+        /* Move on to the next descriptor after finishing setting the flags
+         * for the last data descriptor. */
+        //pr_info (" used desc: %d\n", i);
+        i++;
+        if (i == tx_ring->count)
+                i = 0;
+
+        /* Update the pointer to the next header ring */
+        pktr_i++;
+        if (pktr_i == tx_ring->pktr_count)
+                pktr_i = 0;
+
+        /* Update the ring with the descriptors we've used. */
+        tx_ring->next_to_use = i;
+        tx_ring->pktr_next_to_use = pktr_i;
+
+        //DEBUG:
+        //pr_info ("ixgbe_tx_enqueue_pkt_ring:\n");
+        //pr_info (" end ntu: %d, pktr_ntu: %zd:\n",
+        //         tx_ring->next_to_use, tx_ring->pktr_next_to_use);
+
+        return;
+}
+
+static void ixgbe_tx_map_pkt_ring(struct ixgbe_ring *tx_ring,
+			          struct ixgbe_tx_buffer *first,
+			          const u8 hdr_len)
+{
+        struct sk_buff *skb = first->skb;
+        union ixgbe_adv_tx_desc *tx_desc;
+        unsigned short gso_seg = 0;
+        u32 data_offset = 0;
+        u32 pkt_data_len;
+        u32 data_len = skb->len - hdr_len;
+        u32 gso_size = skb_shinfo(skb)->gso_size;
+        u16 last_used;
+
+        //XXX: Because ixgbe_tso has already been called, our starting
+        // descriptor is actually one earlier.
+        //u16 start_ntu = tx_ring->next_to_use;
+        //u16 end_ntu;
+        //size_t start_pktr_ntu = tx_ring->pktr_next_to_use;
+        //size_t end_pktr_ntu;
+
+        //TODO: Write a prepare function that pre-fetches the fragment data
+        // and pkt ring slots that will be used to copy from and to.
+        // And then benchmark the performance differences of these programs
+        //XXX: I feel like prefetching everything all at once is the wrong
+        // thing to do.  We can benchmark this and compare upfront pretching
+        // with incremental prefetching.
+        //if (prefetch_data)
+        //    ixgbe_tx_map_pkt_ring_prefetch(tx_ring, first);
+
+        //DEBUG
+        //pr_err ("ixgbe_tx_map_pkt_ring:\n");
+        //pr_err (" first->gso_segs: %d\n", first->gso_segs);
+        //pr_err (" skb gso_size: %d\n", skb_shinfo(skb)->gso_size);
+        //pr_err (" hdr_len: %d\n", hdr_len);
+        //pr_err (" data_len: %d\n", data_len);
+
+        //DEBUG
+        //u8 push, fin;
+        //push = (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_PSH);
+        //fin = (TCP_SKB_CB(skb)->tcp_flags & TCPHDR_FIN);
+        //pr_err ("ixgbe_tx_map_pkt_ring:\n");
+        //pr_err (" push: %d, fin: %d\n", push, fin);
+        
+        for (gso_seg = 0; gso_seg < first->gso_segs; gso_seg++) {
+            pkt_data_len = min_t(u32, gso_size, data_len);
+
+            /* DEBUG: error checking that we are actually going to send
+             * exactly gso_segs packets. */
+            BUG_ON (pkt_data_len == 0);
+
+            ixgbe_tx_enqueue_pkt_ring (tx_ring, first, hdr_len, pkt_data_len,
+                                       data_offset);
+
+            data_offset += pkt_data_len;
+            data_len -= pkt_data_len;
+
+            /* Assertions */
+            if (pkt_data_len < gso_size)
+                BUG_ON (gso_seg != (first->gso_segs - 1));
+        }
+
+        //DEBUG: Sanity check that we sent all data
+        BUG_ON (data_len != 0);
+        BUG_ON (data_offset != (skb->len - hdr_len));
+
+        /* set next_to_watch value to the last enqueued descriptor.  This is
+         * currently crucial to avoiding deallocating or unmapping data too
+         * early.  In the future, the data should be stored in the last
+         * buffer for freeing, not the first. */
+        last_used = tx_ring->next_to_use;
+        if (last_used == 0)
+            last_used = tx_ring->count;
+        last_used--;
+        tx_desc = IXGBE_TX_DESC(tx_ring, last_used);
+        first->next_to_watch = tx_desc;
+
+        /* Update bytecounts and timestamps now that we have finished sending
+         * the entire segment. */
+        netdev_tx_sent_queue(txring_txq(tx_ring), first->bytecount);
+        first->time_stamp = jiffies;
+
+        /*
+         * Force memory writes to complete before letting h/w know there
+         * are new descriptors to fetch.  (Only applicable for weak-ordered
+         * memory model archs, such as IA-64).
+         *
+         * We also need this memory barrier to make certain all of the
+         * status bits have been updated before next_to_watch is written.
+         */
+        wmb();
+
+        /* Check if xmit should stop. */
+        ixgbe_maybe_stop_tx(tx_ring, DESC_NEEDED);
+
+        /* If xmit is not stopping or there is not more data impending, notify the
+         * NIC of the new packets. */
+        if (netif_xmit_stopped(txring_txq(tx_ring)) || !skb->xmit_more) {
+                writel(tx_ring->next_to_use, tx_ring->tail);
+
+                /* we need this if more than one processor can write to our tail
+                // * at a time, it synchronizes IO on IA64/Altix systems
+                 */
+                mmiowb();
+        }
+
+        //DEBUG: how many descriptors were actually consumed?
+        //end_ntu = tx_ring->next_to_use;
+        //end_pktr_ntu = tx_ring->pktr_next_to_use;
+        //pr_info ("ixgbe_tx_map_pkt_ring:\n");
+        //pr_info (" start_ntu: %d, end_ntu: %d\n", start_ntu, end_ntu);
+        //pr_info (" start_pktr_ntu: %zd, end_pktr_ntu:%zd\n",
+        //         start_pktr_ntu, end_pktr_ntu);
+
+        return;
+}
+
+void ixgbe_atr(struct ixgbe_ring *ring,
+	       struct ixgbe_tx_buffer *first)
 {
 	struct ixgbe_q_vector *q_vector = ring->q_vector;
 	union ixgbe_atr_hash_dword input = { .dword = 0 };
@@ -8376,37 +9652,62 @@ static u16 ixgbe_select_queue(struct net_device *dev, struct sk_buff *skb)
 #endif /* HAVE_NETDEV_SELECT_QUEUE */
 
 netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
-				  struct ixgbe_adapter __maybe_unused *adapter,
+				  //struct ixgbe_adapter __maybe_unused *adapter,
+				  struct ixgbe_adapter *adapter,
 				  struct ixgbe_ring *tx_ring)
 {
 	struct ixgbe_tx_buffer *first;
 	int tso;
 	u32 tx_flags = 0;
-	unsigned short f;
-	u16 count = TXD_USE_COUNT(skb_headlen(skb));
+	u16 count = 0;
+        size_t hr_count = 1;
+        size_t pktr_count = 1;
 	__be16 protocol = skb->protocol;
 	u8 hdr_len = 0;
 
-	/*
-	 * need: 1 descriptor per page * PAGE_SIZE/IXGBE_MAX_DATA_PER_TXD,
-	 *       + 1 desc for skb_headlen/IXGBE_MAX_DATA_PER_TXD,
-	 *       + 2 desc gap to keep tail from touching head,
-	 *       + 1 desc for context descriptor,
-	 * otherwise try next time
-	 */
-	for (f = 0; f < skb_shinfo(skb)->nr_frags; f++)
-		count += TXD_USE_COUNT(skb_shinfo(skb)->frags[f].size);
+        /* For experimental ease, allow for run-time configuration of
+         * whether batched packet processing is used or not. */
+        if (adapter->xmit_batch)
+            return ixgbe_xmit_frame_ring_batch(skb, adapter, tx_ring);
 
-	if (ixgbe_maybe_stop_tx(tx_ring, count + 3)) {
+        /* Get the desciptor count appropriate for the driver config */
+        if (adapter->use_sgseg) {
+            count = ixgbe_txd_count_sgsegs(skb);
+        } else if (adapter->use_pkt_ring) {
+            count = ixgbe_txd_count_pktring(skb);
+        } else {
+            count = ixgbe_txd_count(skb);
+        }
+
+	/* Maintain a + 2 desc gap to keep tail from touching head */
+        count += 2;
+
+        /* Count the number of other ring entries that will be used */
+        hr_count = (skb_shinfo(skb)->gso_segs); // -1 if the first packet
+                                                // uses the existing header
+        pktr_count = skb_shinfo(skb)->gso_segs;
+
+	if (ixgbe_maybe_stop_tx(tx_ring, count)) {
+                pr_info ("ixgbe_xmit_frame_ring: returning NETDEV_TX_BUSY.\n");
+                pr_info (" count: %d\n, ixgbe_desc_unused(tx_ring): %d\n",
+                         count, ixgbe_desc_unused(tx_ring));
 		tx_ring->tx_stats.tx_busy++;
 		return NETDEV_TX_BUSY;
 	}
+
+        // This should always hold now, but may not in the future. */
+        BUG_ON(hr_count > ixgbe_hr_unused(tx_ring));
+        BUG_ON(pktr_count > ixgbe_pktr_unused(tx_ring));
 
 	/* record the location of the first descriptor for this packet */
 	first = &tx_ring->tx_buffer_info[tx_ring->next_to_use];
 	first->skb = skb;
 	first->bytecount = skb->len;
 	first->gso_segs = 1;
+        first->hr_i_valid = false;
+        first->hr_i = -1;
+        first->pktr_i_valid = false;
+        first->pktr_i = -1;
 
 	/* if we have a HW VLAN tag being added default to the HW one */
 	if (skb_vlan_tag_present(skb)) {
@@ -8535,7 +9836,18 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
 #if IS_ENABLED(CONFIG_FCOE)
 xmit_fcoe:
 #endif /* CONFIG_FCOE */
-	ixgbe_tx_map(tx_ring, first, hdr_len);
+        if (tso) {
+                if (adapter->use_sgseg) {
+                        ixgbe_tx_map_sgsegs(tx_ring, first, hdr_len,
+                                            adapter->drv_gso_size);
+                } else if (adapter->use_pkt_ring) {
+                        ixgbe_tx_map_pkt_ring(tx_ring, first, hdr_len);
+                } else {
+                        ixgbe_tx_map(tx_ring, first, hdr_len);
+                }
+        } else {
+                ixgbe_tx_map(tx_ring, first, hdr_len);
+        }
 
 #ifndef HAVE_TRANS_START_IN_QUEUE
 	netdev_ring(tx_ring)->trans_start = jiffies;
@@ -10103,6 +11415,13 @@ no_info_string:
 		hw->mac.ops.setup_link(hw,
 			IXGBE_LINK_SPEED_10GB_FULL | IXGBE_LINK_SPEED_1GB_FULL,
 			true);
+
+        pr_info ("ixgbe_probe:\n");
+        pr_info (" kern_gso_size: %u\n", adapter->kern_gso_size);
+        pr_info (" drv_gso_size: %u\n", adapter->drv_gso_size);
+        pr_info (" use_pkt_ring: %u\n", adapter->use_pkt_ring);
+        pr_info (" use_sgseg: %u\n", adapter->use_sgseg);
+        pr_info (" xmit_batch: %u\n", adapter->xmit_batch);
 
 	return 0;
 

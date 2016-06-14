@@ -130,6 +130,20 @@ IXGBE_PARAM(DCA, "Disable or enable Direct Cache Access, 0=disabled, "
 IXGBE_PARAM(RSS, "Number of Receive-Side Scaling Descriptor Queues, "
 	    "default 0=number of cpus");
 
+IXGBE_PARAM(TSO,"Disable or enable TSO, 0=disabled, 1=enabled");
+
+IXGBE_PARAM(XmitBatch, "Use xmit batching, 0=disabled, 1=enabled");
+
+IXGBE_PARAM(UseSgseg, "Use scatter/gather segmentation, 0=disabled, 1=enabled");
+
+IXGBE_PARAM(UsePktr, "Use the packet ring, 0=disabled, 1=enabled");
+
+IXGBE_PARAM(GSOSize, "GSO Size, range 0-262144"
+	    "default 65536 bytes"); 
+
+IXGBE_PARAM(DrvGSOSize, "Driver internal GSO Size, range 0-262144"
+	    "default 65536 bytes"); 
+
 /* VMDQ - Virtual Machine Device Queues (VMDQ)
  *
  * Valid Range: 1-16
@@ -610,6 +624,204 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 			adapter->flags |= IXGBE_FLAG_DCA_ENABLED_DATA;
 	}
 #endif /* CONFIG_DCA */
+	{ /* TSO Support */
+                static struct ixgbe_option opt = {
+                        .type = enable_option,
+                        .name = "TSO Support",
+                        .err  = "defaulting to Enabled",
+                        .def  = OPTION_ENABLED
+                };
+		struct net_device *netdev = adapter->netdev;
+#ifdef module_param_array
+                if (num_TSO > bd) {
+#endif
+                        unsigned int tso = TSO[bd];
+			//printk("TSO value :::: %d",tso);
+                        ixgbe_validate_option(&tso, &opt);
+			if(tso)
+			{
+				printk("Enabling TSO");
+				netdev->features |= NETIF_F_TSO;
+				//printk("TSO FLAG %u\n",(netdev->features & NETIF_F_TSO));
+			}
+			else
+			{
+				printk("Disabling TSO");
+				netdev->features &= ~NETIF_F_TSO;
+			}
+
+#ifdef module_param_array
+                } else {
+			//printk("Deafault TSO value");
+			//printk("%d",opt.def);
+                        if (opt.def == OPTION_ENABLED)
+                               netdev->features |= NETIF_F_TSO;
+                        else
+                            	netdev->features &= ~NETIF_F_TSO;
+                }
+#endif
+        }
+        { /* GSOSize */
+                static struct ixgbe_option opt = {
+                        .type = range_option,
+                        .name = "GSO Size initialization",
+                        .err  = "using default.",
+                        .def  = 0,
+                        .arg  = { .r = { .min = 0,
+                                         .max = 262144} }
+                };
+		struct net_device *netdev = adapter->netdev;
+                unsigned int gsosize = GSOSize[bd];
+#ifdef module_param_array
+                if (num_GSOSize > bd) {
+#endif
+                        ixgbe_validate_option(&gsosize, &opt);
+                        if (gsosize)
+			{
+				pr_info("GSOSize Non-default value setup: %u\n",
+                                        gsosize);
+                                netif_set_gso_max_size(netdev, gsosize);
+                                adapter->kern_gso_size = gsosize;
+			}
+#ifdef module_param_array
+                } else if (opt.def == 0) {
+			pr_info("GSOSize Default Value\n");
+                        adapter->kern_gso_size = 65536;
+                        netif_set_gso_max_size(netdev, 65536);
+                }
+#endif
+        }
+        { /* DrvGSOSize */
+                static struct ixgbe_option opt = {
+                        .type = range_option,
+                        .name = "Driver GSO Size initialization",
+                        .err  = "using default.",
+                        .def  = 0,
+                        .arg  = { .r = { .min = 100,
+                                         .max = 262144} }
+                };
+                unsigned int drvgsosize = DrvGSOSize[bd];
+#ifdef module_param_array
+                if (num_DrvGSOSize > bd) {
+#endif
+                        ixgbe_validate_option(&drvgsosize, &opt);
+                        if (drvgsosize)
+			{
+				pr_info("DrvGSOSize Non-default value setup\n");
+                                BUG_ON (drvgsosize > IXGBE_MAX_DATA_PER_TXD);
+                                adapter->drv_gso_size = drvgsosize;
+			}
+#ifdef module_param_array
+                } else if (opt.def == 0) {
+			pr_info("DrvGSOSize Default Value: %u\n", 65536);
+                        adapter->drv_gso_size = 65536;
+                }
+#endif
+        }
+	{ /* Xmit Batching */
+                static struct ixgbe_option opt = {
+                        .type = enable_option,
+                        .name = "Xmit Batching",
+                        .err  = "defaulting to Disabled",
+                        .def  = OPTION_DISABLED
+                };
+#ifdef module_param_array
+                if (num_XmitBatch > bd) {
+#endif
+                        unsigned int xmit_batch = XmitBatch[bd];
+			//printk("XmitBatch value :::: %d",tso);
+                        ixgbe_validate_option(&xmit_batch, &opt);
+			if(xmit_batch)
+			{
+				pr_info ("Enabling XmitBatch\n");
+                                adapter->xmit_batch = true;
+			}
+			else
+			{
+				pr_info ("Disabling XmitBatch\n");
+				adapter->xmit_batch = false;
+			}
+
+#ifdef module_param_array
+                } else {
+			pr_info ("Default XmitBatch value\n");
+                        if (opt.def == OPTION_ENABLED)
+                                adapter->xmit_batch = true;
+                        else
+				adapter->xmit_batch = false;
+                }
+#endif
+        }
+	{ /* Use Sgseg */
+                static struct ixgbe_option opt = {
+                        .type = enable_option,
+                        .name = "Use Sgseg",
+                        .err  = "defaulting to Disabled",
+                        .def  = OPTION_DISABLED
+                };
+#ifdef module_param_array
+                if (num_UseSgseg > bd) {
+#endif
+                        unsigned int use_sgseg = UseSgseg[bd];
+			//printk("XmitBatch value :::: %d",tso);
+                        ixgbe_validate_option(&use_sgseg, &opt);
+			if(use_sgseg)
+			{
+				pr_info ("Enabling UseSgseg\n");
+                                adapter->use_sgseg = true;
+			}
+			else
+			{
+				pr_info ("Disabling UseSgseg\n");
+				adapter->use_sgseg = false;
+			}
+
+#ifdef module_param_array
+                } else {
+			pr_info ("Default UseSgseg value\n");
+                        if (opt.def == OPTION_ENABLED)
+                                adapter->use_sgseg = true;
+                        else
+				adapter->use_sgseg = false;
+                }
+#endif
+        }
+	{ /* Use Pktr */
+                static struct ixgbe_option opt = {
+                        .type = enable_option,
+                        .name = "Use Pktr",
+                        .err  = "defaulting to Disabled",
+                        .def  = OPTION_DISABLED
+                };
+#ifdef module_param_array
+                if (num_UsePktr > bd) {
+#endif
+                        unsigned int use_pkt_ring = UsePktr[bd];
+			//printk("XmitBatch value :::: %d",tso);
+                        ixgbe_validate_option(&use_pkt_ring, &opt);
+			if(use_pkt_ring)
+			{
+				pr_info ("Enabling UsePktr\n");
+                                adapter->use_pkt_ring = true;
+			}
+			else
+			{
+				pr_info ("Disabling UsePktr\n");
+				adapter->use_pkt_ring = false;
+			}
+
+#ifdef module_param_array
+                } else {
+			pr_info ("Default UsePktr value\n");
+                        if (opt.def == OPTION_ENABLED)
+                                adapter->use_pkt_ring = true;
+                        else
+				adapter->use_pkt_ring = false;
+                }
+#endif
+        }
+
+
 	{ /* Receive-Side Scaling (RSS) */
 		static struct ixgbe_option opt = {
 			.type = range_option,
@@ -617,11 +829,17 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 			.err  = "using default.",
 			.def  = 0,
 			.arg  = { .r = { .min = 0,
-					 .max = 16} }
+					 .max = 64} }
 		};
 		unsigned int rss = RSS[bd];
+
 		/* adjust Max allowed RSS queues based on MAC type */
-		opt.arg.r.max = ixgbe_max_rss_indices(adapter);
+                /* TODO: I am not sure that the 82599 supports more than 16
+                 * RSS queues.  If this is the case, this code could be
+                 * broken.  In order to fix this, the driver needs to be
+                 * modified to have a different number of tx queues than rx
+                 * queues. */
+		opt.arg.r.max = 64; //ixgbe_max_rss_indices(adapter);
 
 #ifdef module_param_array
 		if (num_RSS > bd) {
