@@ -678,14 +678,14 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
                         ixgbe_validate_option(&gsosize, &opt);
                         if (gsosize)
 			{
-				pr_info("GSOSize Non-default value setup: %u\n",
-                                        gsosize);
+				//pr_info("GSOSize Non-default value setup: %u\n",
+                                //        gsosize);
                                 netif_set_gso_max_size(netdev, gsosize);
                                 adapter->kern_gso_size = gsosize;
 			}
 #ifdef module_param_array
                 } else if (opt.def == 0) {
-			pr_info("GSOSize Default Value\n");
+			//pr_info("GSOSize Default Value\n");
                         adapter->kern_gso_size = 65536;
                         netif_set_gso_max_size(netdev, 65536);
                 }
@@ -707,13 +707,14 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
                         ixgbe_validate_option(&drvgsosize, &opt);
                         if (drvgsosize)
 			{
-				pr_info("DrvGSOSize Non-default value setup\n");
-                                BUG_ON (drvgsosize > IXGBE_MAX_DATA_PER_TXD);
+				//pr_info("DrvGSOSize Non-default value setup\n");
+                                //TODO: Does anything break if drvgsosize is large?
+                                //BUG_ON (drvgsosize > IXGBE_MAX_DATA_PER_TXD);
                                 adapter->drv_gso_size = drvgsosize;
 			}
 #ifdef module_param_array
                 } else if (opt.def == 0) {
-			pr_info("DrvGSOSize Default Value: %u\n", 65536);
+			//pr_info("DrvGSOSize Default Value: %u\n", 65536);
                         adapter->drv_gso_size = 65536;
                 }
 #endif
@@ -733,18 +734,18 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
                         ixgbe_validate_option(&xmit_batch, &opt);
 			if(xmit_batch)
 			{
-				pr_info ("Enabling XmitBatch\n");
+				//pr_info ("Enabling XmitBatch\n");
                                 adapter->xmit_batch = true;
 			}
 			else
 			{
-				pr_info ("Disabling XmitBatch\n");
+				//pr_info ("Disabling XmitBatch\n");
 				adapter->xmit_batch = false;
 			}
 
 #ifdef module_param_array
                 } else {
-			pr_info ("Default XmitBatch value\n");
+			//pr_info ("Default XmitBatch value\n");
                         if (opt.def == OPTION_ENABLED)
                                 adapter->xmit_batch = true;
                         else
@@ -767,18 +768,18 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
                         ixgbe_validate_option(&use_sgseg, &opt);
 			if(use_sgseg)
 			{
-				pr_info ("Enabling UseSgseg\n");
+				//pr_info ("Enabling UseSgseg\n");
                                 adapter->use_sgseg = true;
 			}
 			else
 			{
-				pr_info ("Disabling UseSgseg\n");
+				//pr_info ("Disabling UseSgseg\n");
 				adapter->use_sgseg = false;
 			}
 
 #ifdef module_param_array
                 } else {
-			pr_info ("Default UseSgseg value\n");
+			//pr_info ("Default UseSgseg value\n");
                         if (opt.def == OPTION_ENABLED)
                                 adapter->use_sgseg = true;
                         else
@@ -801,18 +802,18 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
                         ixgbe_validate_option(&use_pkt_ring, &opt);
 			if(use_pkt_ring)
 			{
-				pr_info ("Enabling UsePktr\n");
+				//pr_info ("Enabling UsePktr\n");
                                 adapter->use_pkt_ring = true;
 			}
 			else
 			{
-				pr_info ("Disabling UsePktr\n");
+				//pr_info ("Disabling UsePktr\n");
 				adapter->use_pkt_ring = false;
 			}
 
 #ifdef module_param_array
                 } else {
-			pr_info ("Default UsePktr value\n");
+			//pr_info ("Default UsePktr value\n");
                         if (opt.def == OPTION_ENABLED)
                                 adapter->use_pkt_ring = true;
                         else

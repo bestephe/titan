@@ -676,6 +676,9 @@ static u64 ixgbe_get_tx_pending(struct ixgbe_ring *ring)
 	u32 head = IXGBE_READ_REG(hw, IXGBE_TDH(ring->reg_idx));
 	u32 tail = IXGBE_READ_REG(hw, IXGBE_TDT(ring->reg_idx));
 
+        //pr_info ("ring_%d: head: %d. tail: %d\n", ring->queue_index,
+        //         head, tail);
+
 	return ((head <= tail) ? tail : tail + ring->count) - head;
 }
 
@@ -772,7 +775,7 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 	unsigned int budget = q_vector->tx.work_limit;
 	unsigned int i = tx_ring->next_to_clean;
         unsigned int frag_i;
-        u16 null_desc_count;
+        u16 null_desc_count = 0;
 
 	if (test_bit(__IXGBE_DOWN, &adapter->state))
 		return true;
@@ -784,9 +787,20 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 	do {
 		union ixgbe_adv_tx_desc *eop_desc = tx_buffer->next_to_watch;
 
+                //XXX: DEBUG: Do not service the rx queue.
+                //break;
+
 		/* if next_to_watch is not set then there is no work pending */
 		if (!eop_desc)
 			break;
+
+                //XXX: DEBUG
+                // Current Debug
+                //pr_info ("clean_tx: (txq: %d), start i (ntc): %d <%d>\n",
+                //    tx_ring->queue_index, i, i + tx_ring->count);
+                //pr_info ("ixgbe_clean_tx_irq: (txq: %d)\n", tx_ring->queue_index);
+                //pr_info (" start i (ntc): %d <%d>\n", i, i + tx_ring->count);
+                //pr_info (" eop_desc: %p\n", eop_desc);
 
 		/* prevent any other reads prior to eop_desc */
 		read_barrier_depends();
@@ -842,8 +856,8 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
                 //BUG_ON (tx_buffer->hr_i == -1);
                 if (tx_buffer->hr_i_valid) {
                     BUG_ON (tx_buffer->hr_i < 0);
-                    //pr_err("ixgbe_clean_tx_irq:\n");
-                    //pr_err(" hr_i: %zd, hr_count: %zd, hr_next_to_clean: %zd\n",
+                    //pr_info("ixgbe_clean_tx_irq:\n");
+                    //pr_info(" hr_i: %d, hr_count: %zd, hr_next_to_clean: %zd\n",
                     //    tx_buffer->hr_i, tx_ring->hr_count, tx_ring->hr_next_to_clean);
                     BUG_ON (tx_buffer->hr_i >= tx_ring->hr_count);
                     BUG_ON (tx_buffer->hr_i != tx_ring->hr_next_to_clean);
@@ -865,6 +879,8 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
                 /* Remember how many null descriptors need to be skipped
                  * before cleaning the tx_buffer. */
                 null_desc_count = tx_buffer->null_desc_count;
+                
+                //XXX: DEBUG
                 //pr_info (" null_desc_count: %d\n", null_desc_count);
 
 		/* clear tx_buffer data */
@@ -902,6 +918,10 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 
                         /* Reclaim any buffers in the header ring. */
                         if (tx_buffer->hr_i_valid) {
+                            //XXX: DEBUG
+                            //pr_info (" hr_i: %d. hr_next_to_clean: %zd\n",
+                            //         tx_buffer->hr_i, tx_ring->hr_next_to_clean);
+
                             BUG_ON (tx_buffer->hr_i < 0);
                             BUG_ON (tx_buffer->hr_i >= tx_ring->hr_count);
                             BUG_ON (tx_buffer->hr_i != tx_ring->hr_next_to_clean);
@@ -936,6 +956,7 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 			tx_desc = IXGBE_TX_DESC(tx_ring, 0);
 		}
 
+
                 /* If there are null packets, skip them one at a time
                  * to assert that they are in fact null descriptors */
                 /* If we set up valid tx_buffers for each null descriptor, this
@@ -950,8 +971,9 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
                  * now anyways. */
                 while (null_desc_count > 0) {
                     //pr_info (" Checking for nulldesc in desc: %d (%d)\n",
-                    //    i, i + tx_ring->count);
+                    //         i, i + tx_ring->count);
                     BUG_ON (!ixgbe_is_tx_nulldesc(tx_desc));
+                    ixgbe_tx_buffer_clean(tx_buffer);
                     null_desc_count--;
                     tx_buffer++;
                     tx_desc++;
@@ -962,6 +984,10 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
                             tx_desc = IXGBE_TX_DESC(tx_ring, 0);
                     }
                 }
+
+                //XXX: DEBUG
+                //pr_info ("ixgbe_clean_tx_irq: done w/ one\n");
+                //pr_info (" next to clean i (ntc): %d <%d>\n", i, i + tx_ring->count);
 
 		/* issue prefetch for next Tx descriptor */
 		prefetch(tx_desc);
@@ -978,6 +1004,9 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 	u64_stats_update_end(&tx_ring->syncp);
 	q_vector->tx.total_bytes += total_bytes;
 	q_vector->tx.total_packets += total_packets;
+
+        //pr_info ("ring_%d: ntc: %d. ntu: %d\n", tx_ring->queue_index,
+        //         tx_ring->next_to_clean, tx_ring->next_to_use);
 
 	if (check_for_tx_hang(tx_ring) && ixgbe_check_tx_hang(tx_ring)) {
 		/* schedule immediate reset if we believe we hung */
@@ -1008,6 +1037,14 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 		/* the adapter is about to reset, no point in enabling stuff */
 		return true;
 	}
+
+#if 0
+        if (total_packets > 0) {
+            pr_info ("ixgbe_clean_tx_irq:\n");
+            pr_info (" total_packets: %d\n", total_packets);
+            pr_info (" total_bytes: %d\n", total_bytes);
+        }
+#endif
 
 	netdev_tx_completed_queue(txring_txq(tx_ring),
 				  total_packets, total_bytes);
@@ -8233,6 +8270,10 @@ void ixgbe_tx_olinfo_status(union ixgbe_adv_tx_desc *tx_desc,
 {
 	u32 olinfo_status = paylen << IXGBE_ADVTXD_PAYLEN_SHIFT;
 
+        //XXX: DEBUG
+        //pr_info ("ixgbe_tx_olinfo_status:\n");
+        //pr_info (" tx_flags: %x\n", tx_flags);
+
 	/* enable L4 checksum for TSO and TX checksum offload */
 	olinfo_status |= IXGBE_SET_FLAG(tx_flags,
 					IXGBE_TX_FLAGS_CSUM,
@@ -8912,12 +8953,21 @@ static void ixgbe_tx_map_sgsegs(struct ixgbe_ring *tx_ring,
         u32 data_len = skb->len - hdr_len;
         //TODO: This should be configurable by a parameter in the future
         //TODO: This is a parameter now.  However, it may be better to have the
+
         // parameter include headers and the value used here to not include
         // packet headers.  So this maybe should be changed instead of removed
         //u32 drv_gso_size = skb_shinfo(skb)->gso_size;
         //u32 drv_gso_size = 16384;  
         u32 drv_gso_segs = DIV_ROUND_UP(data_len, drv_gso_size);
         u16 last_used;
+
+        //XXX: DEBUG
+        u32 start_ntu = tx_ring->next_to_use;
+        u32 end_ntu = 0;
+        u32 debug_ntu_i;
+        BUG_ON (start_ntu == 0);
+        start_ntu--;
+
 
         /* Quick sanity check. */
         BUG_ON (hdr_len > IXGBE_MAX_HDR_BYTES);
@@ -9015,10 +9065,39 @@ static void ixgbe_tx_map_sgsegs(struct ixgbe_ring *tx_ring,
 	}
 
         //DEBUG: how many descriptors were actually consumed?
-        //end_ntu = tx_ring->next_to_use;
-        //pr_info ("ixgbe_tx_map_sgsegs:\n");
-        //pr_info (" start_ntu: %d\n", start_ntu);
-        //pr_info (" end_ntu: %d\n", end_ntu);
+        end_ntu = tx_ring->next_to_use;
+        pr_info ("ixgbe_tx_map_sgsegs:\n");
+        pr_info (" start_ntu: %d\n", start_ntu);
+        pr_info (" end_ntu: %d\n", end_ntu);
+
+	struct ixgbe_adv_tx_context_desc *context_desc;
+        //union ixgbe_adv_tx_desc *tx_desc;
+        for (debug_ntu_i = start_ntu;; debug_ntu_i++) {
+            if (debug_ntu_i == tx_ring->count)
+                debug_ntu_i = 0;
+            if (debug_ntu_i == end_ntu)
+                break;
+
+            //XXX: not all of these are data descriptors
+            tx_desc = IXGBE_TX_DESC(tx_ring, debug_ntu_i);
+            if ((le32_to_cpu(tx_desc->read.cmd_type_len) &
+                 IXGBE_ADVTXD_DTYP_DATA) == IXGBE_ADVTXD_DTYP_DATA) {
+                pr_info (" desc: %d. cmd_type_len: %X. olinfo_status: %X\n",
+                         debug_ntu_i, tx_desc->read.cmd_type_len,
+                         tx_desc->read.olinfo_status);
+            } else {
+                BUG_ON ((le32_to_cpu(tx_desc->read.cmd_type_len) &
+                 IXGBE_ADVTXD_DTYP_CTXT) != IXGBE_ADVTXD_DTYP_CTXT);
+                context_desc = (struct ixgbe_adv_tx_context_desc *)
+                    tx_desc;
+                pr_info (" desc: %d. vlan_macip_lens: %d. seqnum_seed: %d\n",
+                         debug_ntu_i, context_desc->vlan_macip_lens,
+                         context_desc->seqnum_seed);
+                pr_info ("  type_tucmd_mlhl: %d. mss_l4len_idx: %d\n",
+                         context_desc->type_tucmd_mlhl,
+                         context_desc->mss_l4len_idx);
+            }
+        }
 
         return;
 }
@@ -9672,7 +9751,9 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
 
         /* Get the desciptor count appropriate for the driver config */
         if (adapter->use_sgseg) {
-            count = ixgbe_txd_count_sgsegs(skb);
+            /* ignore return to get hdr_len set early. */
+            ixgbe_is_tso_or_csum(adapter, skb, &hdr_len);
+            count = ixgbe_txd_count_sgsegs(skb, hdr_len, adapter->drv_gso_size);
         } else if (adapter->use_pkt_ring) {
             count = ixgbe_txd_count_pktring(skb);
         } else {

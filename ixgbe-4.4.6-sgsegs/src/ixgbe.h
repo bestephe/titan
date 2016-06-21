@@ -306,10 +306,14 @@ static inline u16 ixgbe_txd_count(struct sk_buff *skb)
  * of length 0 with any remaining allocated descriptors.  An exact allocation
  * would be possible, but it would require more compuation. */
 /* XXX: BS: It is not immediately obvious to me which choice is better. */
-static inline u16 ixgbe_txd_count_sgsegs(struct sk_buff *skb)
+static inline u16 ixgbe_txd_count_sgsegs(struct sk_buff *skb, u8 hdr_len,
+                                         u32 drv_gso_size)
 {
+        u32 data_len = skb->len - hdr_len;
         u16 per_seg_count = 0;
         u16 count = 0;
+        //u8 hdr_len = tcp_hdrlen(skb) + skb_transport_offset(skb);
+        u32 drv_gso_segs = DIV_ROUND_UP(data_len, drv_gso_size);
 
         /* This assertion doesn't hold unless tso == 1, and ixgbe_tso(...)
          * hasn't been called yet. */
@@ -322,7 +326,7 @@ static inline u16 ixgbe_txd_count_sgsegs(struct sk_buff *skb)
         // count will need to be increased and this code changed.
         //TODO: GSOSize will need to be saved somewhere for this assertion to
         //be made here.
-        //BUG_ON (drv_gso_size > IXGBE_MAX_DATA_PER_TXD);
+        BUG_ON (drv_gso_size > IXGBE_MAX_DATA_PER_TXD);
 
         /* Sgsegs should need at most 4 descriptors per seg, but often use 3:
          *          (+ 1 desc for context descriptor)
@@ -332,7 +336,9 @@ static inline u16 ixgbe_txd_count_sgsegs(struct sk_buff *skb)
          */
         per_seg_count = 4;
 
-        count = per_seg_count * skb_shinfo(skb)->gso_segs;
+        count = per_seg_count * drv_gso_segs;
+
+        BUG_ON (count == 0);
 
         return count;
 }
@@ -414,6 +420,11 @@ struct ixgbe_skb_batch_data {
         u16 hr_ftu;
         u16 pktr_count;
         u16 pktr_ftu;
+        u16 drv_segs;
+        u16 drv_seg_ftu; /* This will need to change if we do better packet
+                          * scheduling */
+        u8 tso_or_csum;
+        u8 hdr_len;
 };
 
 static inline void ixgbe_tx_buffer_clean(struct ixgbe_tx_buffer *tx_buffer)
@@ -547,6 +558,7 @@ struct ixgbe_ring {
         // should be done per-packet.
         struct ixgbe_skb_batch_data skb_batch[IXGBE_MAX_XMIT_BATCH_SIZE];
         u16 skb_batch_size;
+        u16 skb_batch_seg_count;
         u16 skb_batch_desc_count;
         u16 skb_batch_hr_count;
         u16 skb_batch_pktr_count;
@@ -1297,6 +1309,8 @@ void ixgbe_clear_vxlan_port(struct ixgbe_adapter *);
 void ixgbe_set_rx_mode(struct net_device *netdev);
 int ixgbe_write_mc_addr_list(struct net_device *netdev);
 int ixgbe_setup_tc(struct net_device *dev, u8 tc);
+int ixgbe_is_tso(struct sk_buff *);
+int ixgbe_is_tso_or_csum(struct ixgbe_adapter *, struct sk_buff *, u8 *);
 void ixgbe_tx_nulldesc(struct ixgbe_ring *, u16);
 int ixgbe_is_tx_nulldesc(union ixgbe_adv_tx_desc *tx_desc);
 void ixgbe_tx_ctxtdesc_ntu(struct ixgbe_ring *, u32, u32, u32, u32, u16);

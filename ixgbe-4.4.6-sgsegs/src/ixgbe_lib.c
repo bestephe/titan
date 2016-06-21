@@ -1279,6 +1279,71 @@ void ixgbe_clear_interrupt_scheme(struct ixgbe_adapter *adapter)
 	ixgbe_reset_interrupt_capability(adapter);
 }
 
+int ixgbe_is_tso(struct sk_buff *skb)
+{
+        /* TSO is true. */
+	if (skb->ip_summed == CHECKSUM_PARTIAL && skb_is_gso(skb)) {
+            return 1;
+        }
+
+        return 0;
+}
+
+int ixgbe_is_tso_or_csum(struct ixgbe_adapter *adapter, struct sk_buff *skb, u8 *hdr_len)
+{
+	u32 l4len;
+        u32 tx_flags = 0; // Needed to check for csum
+	//__be16 protocol = skb->protocol;
+
+        /* TSO is true. */
+	if (skb->ip_summed == CHECKSUM_PARTIAL && skb_is_gso(skb)) {
+                /* compute header lengths */
+                BUG_ON (*hdr_len != 0);
+                l4len = tcp_hdrlen(skb);
+                *hdr_len = skb_transport_offset(skb) + l4len;
+
+		return 1;
+        }
+
+
+        /* Now get the flags so we can check for csum */
+	if (skb_vlan_tag_present(skb)) {
+		tx_flags |= skb_vlan_tag_get(skb) << IXGBE_TX_FLAGS_VLAN_SHIFT;
+		tx_flags |= IXGBE_TX_FLAGS_HW_VLAN;
+        }
+
+#ifdef CONFIG_PCI_IOV
+	/*
+	 * Use the l2switch_enable flag - would be false if the DMA
+	 * Tx switch had been disabled.
+	 */
+	if (adapter->flags & IXGBE_FLAG_SRIOV_L2SWITCH_ENABLE)
+		tx_flags |= IXGBE_TX_FLAGS_CC;
+#endif
+
+
+        //TODO: support more features in the future.
+        BUG_ON (adapter->flags & IXGBE_FLAG_DCB_ENABLED);
+
+        //XXX: DEBUG
+        //pr_info ("ixgbe_is_tso_or_csum:\n");
+        //pr_info (" skb->ip_summed == CHECKSUM_PARTIAL: %d\n",
+        //         skb->ip_summed == CHECKSUM_PARTIAL);
+        //pr_info (" tx_flags & IXGBE_TX_FLAGS_HW_VLAN: %d\n",
+        //         tx_flags & IXGBE_TX_FLAGS_HW_VLAN);
+        //pr_info (" tx_flags & IXGBE_TX_FLAGS_CC: %d\n",
+        //         tx_flags & IXGBE_TX_FLAGS_CC);
+
+
+        /* ixgbe_tx_csum */
+	if (skb->ip_summed != CHECKSUM_PARTIAL &&
+                !(tx_flags & IXGBE_TX_FLAGS_HW_VLAN) &&
+                !(tx_flags & IXGBE_TX_FLAGS_CC))
+			return 0;
+
+        return 1;
+}
+
 void ixgbe_tx_nulldesc(struct ixgbe_ring *tx_ring, u16 desc_i)
 {
 	union ixgbe_adv_tx_desc *tx_desc;
