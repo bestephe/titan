@@ -787,8 +787,11 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 	do {
 		union ixgbe_adv_tx_desc *eop_desc = tx_buffer->next_to_watch;
 
-                //XXX: DEBUG: Do not service the rx queue.
-                //break;
+                //if (!eop_desc) {
+                //    pr_info ("clean_txq_%d: ntc: %d (tx_buffer: %p). ntu: %d\n",
+                //        tx_ring->queue_index, i + tx_ring->count, tx_buffer,
+                //        tx_ring->next_to_use);
+                //}
 
 		/* if next_to_watch is not set then there is no work pending */
 		if (!eop_desc)
@@ -796,11 +799,11 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 
                 //XXX: DEBUG
                 // Current Debug
-                //pr_info ("clean_tx: (txq: %d), start i (ntc): %d <%d>\n",
-                //    tx_ring->queue_index, i, i + tx_ring->count);
-                //pr_info ("ixgbe_clean_tx_irq: (txq: %d)\n", tx_ring->queue_index);
-                //pr_info (" start i (ntc): %d <%d>\n", i, i + tx_ring->count);
-                //pr_info (" eop_desc: %p\n", eop_desc);
+                //pr_info ("clean_txq_%d: start i (ntc): <%d> (tx_buffer: %p)\n",
+                //    tx_ring->queue_index, i + tx_ring->count, tx_buffer);
+                ////pr_info ("ixgbe_clean_tx_irq: (txq: %d)\n", tx_ring->queue_index);
+                ////pr_info (" start i (ntc): %d <%d>\n", i, i + tx_ring->count);
+                ////pr_info (" eop_desc: %p\n", eop_desc);
 
 		/* prevent any other reads prior to eop_desc */
 		read_barrier_depends();
@@ -811,6 +814,9 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 
 		/* clear next_to_watch to prevent false hangs */
 		tx_buffer->next_to_watch = NULL;
+
+                //pr_info ("clean_txq_%d: tx_buffer: %p. bytecount: %d\n",
+                //    tx_ring->queue_index, tx_buffer, tx_buffer->bytecount);
 
 		/* update the statistics for this packet */
 		total_bytes += tx_buffer->bytecount;
@@ -987,13 +993,18 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 
                 //XXX: DEBUG
                 //pr_info ("ixgbe_clean_tx_irq: done w/ one\n");
-                //pr_info (" next to clean i (ntc): %d <%d>\n", i, i + tx_ring->count);
+                //pr_info ("clean_txq_%d: done w/ one. ntc: %d\n",
+                //    tx_ring->queue_index, i + tx_ring->count);
 
 		/* issue prefetch for next Tx descriptor */
 		prefetch(tx_desc);
 
 		/* update budget accounting */
 		budget--;
+
+                if (budget == 0) {
+                    pr_info ("WARNING: entire clean_tx budget consumed!\n");
+                }
 	} while (likely(budget));
 
 	i += tx_ring->count;
@@ -1038,13 +1049,13 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 		return true;
 	}
 
-#if 0
         if (total_packets > 0) {
-            pr_info ("ixgbe_clean_tx_irq:\n");
-            pr_info (" total_packets: %d\n", total_packets);
-            pr_info (" total_bytes: %d\n", total_bytes);
+            //pr_info ("ixgbe_clean_tx_irq:\n");
+            //pr_info (" total_packets: %d\n", total_packets);
+            //pr_info (" total_bytes: %d\n", total_bytes);
+            //pr_info ("clean_txq_%d: packets: %d. bytes: %d\n",
+            //         tx_ring->queue_index, total_packets, total_bytes);
         }
-#endif
 
 	netdev_tx_completed_queue(txring_txq(tx_ring),
 				  total_packets, total_bytes);
@@ -8962,11 +8973,14 @@ static void ixgbe_tx_map_sgsegs(struct ixgbe_ring *tx_ring,
         u16 last_used;
 
         //XXX: DEBUG
+        //XXX: Nuclear debugging of all written descriptors!
+#if 0
         u32 start_ntu = tx_ring->next_to_use;
         u32 end_ntu = 0;
         u32 debug_ntu_i;
         BUG_ON (start_ntu == 0);
         start_ntu--;
+#endif
 
 
         /* Quick sanity check. */
@@ -9065,6 +9079,8 @@ static void ixgbe_tx_map_sgsegs(struct ixgbe_ring *tx_ring,
 	}
 
         //DEBUG: how many descriptors were actually consumed?
+        //XXX: Nuclear debugging of all written descriptors!
+#if 0
         end_ntu = tx_ring->next_to_use;
         pr_info ("ixgbe_tx_map_sgsegs:\n");
         pr_info (" start_ntu: %d\n", start_ntu);
@@ -9098,6 +9114,7 @@ static void ixgbe_tx_map_sgsegs(struct ixgbe_ring *tx_ring,
                          context_desc->mss_l4len_idx);
             }
         }
+#endif
 
         return;
 }

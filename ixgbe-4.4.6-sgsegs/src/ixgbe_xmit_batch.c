@@ -334,9 +334,9 @@ map_fpp_first1:
     _first[I]->pktr_i_valid = false;
 
     //XXX: DEBUG
-    pr_info("ixgbe_xmit_batch_map: (txq: %d)\n", tx_ring->queue_index);
-    pr_info (" _cur_skb_data[I]->desc_ftu: %d\n", _cur_skb_data[I]->desc_ftu);
-    pr_info (" _cur_skb_data[I]->desc_count: %d\n", _cur_skb_data[I]->desc_count);
+    //pr_info("ixgbe_xmit_batch_map: (txq: %d)\n", tx_ring->queue_index);
+    //pr_info (" _cur_skb_data[I]->desc_ftu: %d\n", _cur_skb_data[I]->desc_ftu);
+    //pr_info (" _cur_skb_data[I]->desc_count: %d\n", _cur_skb_data[I]->desc_count);
 
     /* Prefetch: skb should already be prefetched? benchmark? */
 
@@ -653,7 +653,8 @@ struct ixgbe_seg_batch_data {
     u8 last_seg;
 };
 
-static void ixgbe_tx_prepare_segs(struct ixgbe_seg_batch_data *seg_data_array,
+static void ixgbe_tx_prepare_segs(struct ixgbe_ring *tx_ring,
+                                  struct ixgbe_seg_batch_data *seg_data_array,
                                   struct ixgbe_skb_batch_data *skb_data,
                                   struct ixgbe_tx_buffer *first,
                                   u32 drv_gso_size)
@@ -667,21 +668,22 @@ static void ixgbe_tx_prepare_segs(struct ixgbe_seg_batch_data *seg_data_array,
     u16 hr_per_seg;
     u16 last_seg = 0;
 
+    BUG_ON (skb_data->desc_ftu >= tx_ring->count);
     BUG_ON ((skb_data->desc_count % skb_data->drv_segs) != 0);
     BUG_ON ((skb_data->hr_count % skb_data->drv_segs) != 0);
     desc_per_seg = skb_data->desc_count / skb_data->drv_segs;
     hr_per_seg = skb_data->hr_count / skb_data->drv_segs;
 
-    pr_info ("ixgbe_tx_prepare_segs:\n");
+    //pr_info ("ixgbe_tx_prepare_segs:\n");
     //pr_info (" desc_per_seg: %d\n", desc_per_seg);
-    pr_info (" skb_data->drv_segs: %d\n", skb_data->drv_segs);
-    pr_info (" skb_data->hr_count: %d\n", skb_data->hr_count);
-    pr_info (" hr_per_seg: %d\n", hr_per_seg);
-    pr_info (" hdr_len: %d. data_len: %d\n", skb_data->hdr_len, data_len);
+    //pr_info (" skb_data->drv_segs: %d\n", skb_data->drv_segs);
+    //pr_info (" skb_data->hr_count: %d\n", skb_data->hr_count);
+    //pr_info (" hr_per_seg: %d\n", hr_per_seg);
+    //pr_info (" hdr_len: %d. data_len: %d\n", skb_data->hdr_len, data_len);
 
     BUG_ON (hr_per_seg > 1);
 
-    if (!skb_data->tso_or_csum) {
+    if (!skb_data->tso_or_csum || skb_data->drv_segs == 1) {
         BUG_ON (skb_data->drv_segs != 1);
         BUG_ON (skb_data->hdr_len != 0);
 
@@ -722,14 +724,21 @@ static void ixgbe_tx_prepare_segs(struct ixgbe_seg_batch_data *seg_data_array,
             cur_seg_data->data_offset = data_offset;
         }
         cur_seg_data->desc_count = desc_per_seg;
-        cur_seg_data->desc_ftu = skb_data->desc_ftu + (gso_seg * desc_per_seg);
+        cur_seg_data->desc_ftu = (skb_data->desc_ftu + (gso_seg * desc_per_seg)) % tx_ring->count;
         cur_seg_data->hr_count = hr_per_seg;
-        cur_seg_data->hr_ftu = skb_data->hr_ftu + (gso_seg * hr_per_seg);
+        cur_seg_data->hr_ftu = (skb_data->hr_ftu + (gso_seg * hr_per_seg)) % tx_ring->hr_count;
 
         data_offset += pkt_data_len;
         BUG_ON (pkt_data_len > data_len);
         data_len -= pkt_data_len;
 
+        if (gso_seg == (skb_data->drv_segs - 1)) {
+            cur_seg_data->last_seg = 1;
+        } else {
+            cur_seg_data->last_seg = 0;
+        }
+
+#if 0
         if (data_len == 0 && !last_seg) {
             //pr_info (" last_seg: %d\n", gso_seg);
             cur_seg_data->last_seg = 1;
@@ -737,8 +746,11 @@ static void ixgbe_tx_prepare_segs(struct ixgbe_seg_batch_data *seg_data_array,
         } else {
             cur_seg_data->last_seg = 0;
         }
+#endif
 
     }
+
+    BUG_ON (data_len != 0);
 }
 
 static void ixgbe_tx_enqueue_sgsegs_batch(struct ixgbe_ring *tx_ring,
@@ -775,31 +787,21 @@ static void ixgbe_tx_enqueue_sgsegs_batch(struct ixgbe_ring *tx_ring,
         u16 hr_count = cur_seg_batch->hr_count;
 
         BUG_ON (desc_count == 0);
-
-        if (cur_seg_batch->skb_batch_data == NULL) {
-            pr_info (" Skipping an empty seg...\n"); 
-            if (hr_count) {
-                BUG_ON (hr_count != 1);
-                tx_buffer = &tx_ring->tx_buffer_info[desc_i];
-                tx_buffer->hr_i = hr_i;
-                tx_buffer->hr_i_valid = true;
-
-                pr_info (" empty seg hr_i: %d\n", hr_i);
-            }
-            continue;
-        }
+        BUG_ON (desc_i >= tx_ring->count);
+        BUG_ON (hr_i >= tx_ring->hr_count);
+        BUG_ON (cur_seg_batch->skb_batch_data == NULL); //I've made this case no longer possible
         
         /* These must be set after checking if we have an empty seg. */
         hdr_len = cur_seg_batch->skb_batch_data->hdr_len;
         skb = first->skb;
         
         //XXX: DEBUG
-        pr_info ("ixgbe_tx_enqueue_sgsegs_batch (tso seg): %d\n", loop_var);
-        pr_info (" data_len: %d\n", cur_seg_batch->data_len);
-        pr_info (" hdr_len: %d\n", cur_seg_batch->skb_batch_data->hdr_len);
-        pr_info (" data_offset: %d\n", cur_seg_batch->data_offset);
-        pr_info (" desc_count: %d\n", cur_seg_batch->desc_count);
-        pr_info (" desc_ftu: %d\n", cur_seg_batch->desc_ftu);
+        //pr_info ("ixgbe_tx_enqueue_sgsegs_batch (tso seg): %d\n", loop_var);
+        //pr_info (" data_len: %d\n", cur_seg_batch->data_len);
+        ////pr_info (" hdr_len: %d\n", cur_seg_batch->skb_batch_data->hdr_len);
+        //pr_info (" data_offset: %d\n", cur_seg_batch->data_offset);
+        //pr_info (" desc_count: %d\n", cur_seg_batch->desc_count);
+        //pr_info (" desc_ftu: %d\n", cur_seg_batch->desc_ftu);
         //    pr_info (" hr_count: %d\n", cur_seg_batch->hr_count);
         //    pr_info (" hr_ftu: %d\n", cur_seg_batch->hr_ftu);
         //    pr_info (" last_seg: %d\n", cur_seg_batch->last_seg);
@@ -812,9 +814,9 @@ static void ixgbe_tx_enqueue_sgsegs_batch(struct ixgbe_ring *tx_ring,
         tx_hdr = IXGBE_TX_HDR(tx_ring, hr_i);
 
         //XXX: DEBUG
-        pr_info ("ixgbe_tx_enqueue_sgsegs_batch:\n");
-        pr_info (" init desc_i: %d\n", desc_i);
-        pr_info (" init tx_desc: %p\n", tx_desc);
+        //pr_info ("ixgbe_tx_enqueue_sgsegs_batch:\n");
+        //pr_info (" init desc_i: %d\n", desc_i);
+        //pr_info (" init tx_desc: %p\n", tx_desc);
 
         /* The first context descriptor has not yet been created.  Also, the
          * packet header does not need to be copied for the first packet. */
@@ -842,6 +844,7 @@ static void ixgbe_tx_enqueue_sgsegs_batch(struct ixgbe_ring *tx_ring,
                         tx_desc = IXGBE_TX_DESC(tx_ring, 0);
                     }
                     tx_desc->read.olinfo_status = 0;
+                    BUG_ON (desc_i >= tx_ring->count);
                 }
 
                 /* The above functions can update tx_flags */
@@ -872,6 +875,10 @@ static void ixgbe_tx_enqueue_sgsegs_batch(struct ixgbe_ring *tx_ring,
                 BUG_ON (size > IXGBE_MAX_DATA_PER_TXD);
                 BUG_ON (size > first->len);
                 BUG_ON (first->len != skb_headlen (skb));
+                if (size != first->len) {
+                    pr_info (" hdr_len: %d. data_len: %d\n", hdr_len, data_len);
+                    pr_info (" size: %d. first->len: %d\n", size, first->len);
+                }
                 BUG_ON (size != first->len); // Sending a first segment
                                              // smaller than skb_headlen
                                              // (first->len) shouldn't be
@@ -898,11 +905,11 @@ static void ixgbe_tx_enqueue_sgsegs_batch(struct ixgbe_ring *tx_ring,
                 /* TODO: If a header ring slot has been allocated, then this
                  *  needs to be noted in a tx_buffer. */
                 if (hr_count > 0) {
-                    pr_info ("ixgbe_tx_enqueue_sgsegs_batch:\n");
-                    pr_info (" wasting a slot in the header ring!\n");
+                    //pr_info ("ixgbe_tx_enqueue_sgsegs_batch:\n");
+                    //pr_info (" wasting a slot in the header ring!\n");
+                    //pr_info (" hr_i: %d\n", hr_i);
                     BUG_ON (hr_count != 1);
                     tx_buffer = &tx_ring->tx_buffer_info[desc_i];
-                    pr_info (" hr_i: %d\n", hr_i);
                     tx_buffer->hr_i = hr_i;
                     tx_buffer->hr_i_valid = true;
 
@@ -934,6 +941,7 @@ static void ixgbe_tx_enqueue_sgsegs_batch(struct ixgbe_ring *tx_ring,
 			desc_i = 0;
 		}
 		tx_desc->read.olinfo_status = 0;
+                BUG_ON (desc_i >= tx_ring->count);
 
         } else {
                 //XXX: TODO: this has a race condition because
@@ -970,6 +978,7 @@ static void ixgbe_tx_enqueue_sgsegs_batch(struct ixgbe_ring *tx_ring,
                 }
                 tx_desc->read.olinfo_status = 0;
                 tx_buffer = &tx_ring->tx_buffer_info[desc_i];
+                BUG_ON (desc_i >= tx_ring->count);
                 //ixgbe_tx_buffer_clean(tx_buffer);
                 tx_buffer->hr_i = -1;
                 tx_buffer->hr_i_valid = false;
@@ -1027,7 +1036,7 @@ static void ixgbe_tx_enqueue_sgsegs_batch(struct ixgbe_ring *tx_ring,
                 tx_desc->read.buffer_addr = cpu_to_le64(dma);
                 tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type ^ hdr_len);
 
-                pr_info (" hr_i: %d\n", hr_i);
+                //pr_info (" hr_i: %d\n", hr_i);
 
                 /* Update the pointer to the next header ring */
                 hr_i++;
@@ -1051,14 +1060,15 @@ static void ixgbe_tx_enqueue_sgsegs_batch(struct ixgbe_ring *tx_ring,
                 //ixgbe_tx_buffer_clean(tx_buffer);
                 tx_buffer->hr_i = -1;
                 tx_buffer->hr_i_valid = false;
+                BUG_ON (desc_i >= tx_ring->count);
         }
 
         /*
          * Send data_len of data starting at data_offset
          */
-        pr_info ("ixgbe_tx_enqueue_sgsegs_batch: (loop_var: %d)\n", loop_var);
-        pr_info (" sending data_len (%d) starting at data_offset (%d)\n",
-                 data_len, data_offset);
+        //pr_info ("ixgbe_tx_enqueue_sgsegs_batch: (loop_var: %d)\n", loop_var);
+        //pr_info (" sending data_len (%d) starting at data_offset (%d)\n",
+        //         data_len, data_offset);
 
         /* This function currently assumes that there is at least one more
          * data descriptor to be created at this point. */
@@ -1190,28 +1200,34 @@ last_desc:
 
         /* only update data on the last segment */
         if (cur_seg_batch->last_seg) {
-            pr_info ("ixgbe_tx_enqueue_sgsegs_batch:\n");
-            pr_info (" Updating BQL: %d bytes\n", first->bytecount);
+            //pr_info ("ixgbe_tx_enqueue_sgsegs_batch:\n");
+            //pr_info (" tx-%d: Updating BQL: %d bytes (first: %p, first_i: %d)\n",
+            //    tx_ring->queue_index, first->bytecount, first,
+            //        cur_seg_batch->skb_batch_data->desc_ftu);
 
             /* Note how much data has been sent */
             netdev_tx_sent_queue(txring_txq(tx_ring), first->bytecount);
 
             /* set the timestamp */
             first->time_stamp = jiffies;
-        }
 
-        /*
-         * Force memory writes to complete before letting h/w know there
-         * are new descriptors to fetch.  (Only applicable for weak-ordered
-         * memory model archs, such as IA-64).
-         *
-         */
-        wmb();
+            //TODO: should this happen on every seg or only the last seg?
+            /*
+             * Force memory writes to complete before letting h/w know there
+             * are new descriptors to fetch.  (Only applicable for weak-ordered
+             * memory model archs, such as IA-64).
+             *
+             */
+            wmb();
+        }
 
         /* set next_to_watch value indicating a packet is present */
         /* This code is less subtle than I've previous thought because the NIC
          * actually does set the DD bit, but still be compatible with subtlety. */
         if (cur_seg_batch->last_seg) {
+            BUG_ON (first->next_to_watch != NULL);
+            //pr_info (" first (%p) next_to_watch = %p (%d)\n",
+            //    first, tx_desc, desc_i);
             first->next_to_watch = tx_desc;
 
             //XXX: DEBUG
@@ -1249,14 +1265,14 @@ last_desc:
             quit_desc_i = (cur_seg_batch->desc_ftu + desc_count) % tx_ring->count;
         }
 
-        pr_info (" quit_desc_i: %d\n", quit_desc_i);
+        //pr_info (" quit_desc_i: %d\n", quit_desc_i);
         while (desc_i != quit_desc_i) {
             ixgbe_tx_nulldesc(tx_ring, desc_i);
-            pr_info (" making a nulldesc. i: %d\n", desc_i);
+            //pr_info (" making a nulldesc. i: %d\n", desc_i);
 
             if (cur_seg_batch->last_seg) {
                 first->null_desc_count++;
-                pr_info (" counting a nulldesc. i: %d\n", desc_i);
+                //pr_info (" counting a nulldesc. i: %d\n", desc_i);
             }
 
             desc_i++;
@@ -1294,9 +1310,12 @@ static netdev_tx_t ixgbe_xmit_batch_map_sgseg(struct ixgbe_adapter *adapter,
 
 
     //XXX: DEBUG
+    //XXX: Nuclear debugging of all written descriptors!
+#if 0
     u32 start_ntu = tx_ring->skb_batch[0].desc_ftu;
     u32 end_ntu = (tx_ring->skb_batch[0].desc_ftu + tx_ring->skb_batch[0].desc_count) % tx_ring->count;
     u32 debug_ntu_i;
+#endif
 
     /* G-opt style (FPP) prefetching variables */
     int I = 0;  // batch index
@@ -1340,11 +1359,11 @@ sgseg_fpp_first1:
     _first[I]->pktr_i_valid = false;
 
     //XXX: DEBUG
-    pr_info ("ixgbe_xmit_batch_map_sgseg: (txq: %d)\n", tx_ring->queue_index);
-    pr_info (" _cur_skb_data[I]->desc_ftu: %d\n", _cur_skb_data[I]->desc_ftu);
-    pr_info (" _cur_skb_data[I]->desc_count: %d\n", _cur_skb_data[I]->desc_count);
-    //pr_info (" _desc_i[I]: %d\n", _desc_i[I]);
-    //pr_info (" _first[I]: %p\n", _first[I]);
+    //pr_info ("ixgbe_xmit_batch_map_sgseg: (txq: %d)\n", tx_ring->queue_index);
+    //pr_info (" _cur_skb_data[I]->desc_ftu: %d\n", _cur_skb_data[I]->desc_ftu);
+    //pr_info (" _cur_skb_data[I]->desc_count: %d\n", _cur_skb_data[I]->desc_count);
+    ////pr_info (" _desc_i[I]: %d\n", _desc_i[I]);
+    ////pr_info (" _first[I]: %p\n", _first[I]);
 
     /* Prefetch: skb should already be prefetched? benchmark? */
 
@@ -1467,16 +1486,16 @@ sgseg_fpp_first1:
         tx_ring->skb_batch_seg_count);
 
     //XXX: DEBUG
-    pr_info ("ixgbe_xmit_batch_map_sgseg:\n");
-    pr_info (" preparing seg data: %d (+%d)\n", 
-             _cur_skb_data[I]->drv_seg_ftu,
-             _cur_skb_data[I]->drv_segs);
+    //pr_info ("ixgbe_xmit_batch_map_sgseg:\n");
+    //pr_info (" preparing seg data: %d (+%d)\n", 
+    //         _cur_skb_data[I]->drv_seg_ftu,
+    //         _cur_skb_data[I]->drv_segs);
 
     /* Build the data structures for each individual segment that will be
      * sent */
     _cur_seg_data[I] = &seg_data[_cur_skb_data[I]->drv_seg_ftu];
-    ixgbe_tx_prepare_segs(_cur_seg_data[I], _cur_skb_data[I], _first[I],
-                          adapter->drv_gso_size);
+    ixgbe_tx_prepare_segs(tx_ring, _cur_seg_data[I], _cur_skb_data[I],
+                          _first[I], adapter->drv_gso_size);
 
 sgseg_fpp_end:
     batch_rips[I] = &&sgseg_fpp_end;
@@ -1498,10 +1517,30 @@ sgseg_fpp_nobatch:
     //         tx_ring->skb_batch_seg_count);
     //pr_info (" seg_data[0].hr_count: %d\n", seg_data[0].hr_count);
 
+    //XXX: DEBUG: the last segment must be marked as the last segment
+    if (seg_data[tx_ring->skb_batch_seg_count - 1].last_seg != 1) {
+        pr_info ("txq_%d: ERR No last_seg on batch! seg_count: %d\n", 
+                 tx_ring->queue_index, tx_ring->skb_batch_seg_count);
+    }
+    BUG_ON (seg_data[tx_ring->skb_batch_seg_count - 1].last_seg != 1);
+
     /* Actually enqueue and send the batch. */
     ixgbe_tx_enqueue_sgsegs_batch (tx_ring, seg_data, tx_ring->skb_batch_seg_count);
 
-    //DEBUG: how many descriptors were actually consumed?
+    //XXX: DEBUG
+    //XXX: This doesn't actually hold even though we haven't written the tail
+    // pointer yet?
+#if 0
+    for (I = 0; I < tx_ring->skb_batch_size; I++) {
+        pr_err ("txq_%d ERR: ntw == NULL. I: %d. first: %p\n",
+                tx_ring->queue_index, I, _first[I]);
+        //BUG_ON (_first[I]->next_to_watch == NULL);
+    }
+#endif
+
+    //XXX: DEBUG: how many descriptors were actually consumed?
+    //XXX: Nuclear debugging of all written descriptors!
+#if 0
     BUG_ON (end_ntu != tx_ring->next_to_use);
     pr_info ("ixgbe_xmit_batch_map_sgseg:\n");
     pr_info (" start_ntu: %d\n", start_ntu);
@@ -1535,6 +1574,7 @@ sgseg_fpp_nobatch:
                      context_desc->mss_l4len_idx);
         }
     }
+#endif
 
 
     return NETDEV_TX_OK;
@@ -1551,8 +1591,8 @@ static netdev_tx_t ixgbe_xmit_batch_purge(struct ixgbe_adapter *adapter,
         return NETDEV_TX_OK;
 
     //XXX: DEBUG
-    pr_info ("ixgbe_xmit_batch_purge:\n");
-    pr_info (" tx_ring->skb_batch_size: %d\n", tx_ring->skb_batch_size);
+    //pr_info ("ixgbe_xmit_batch_purge:\n");
+    //pr_info (" tx_ring->skb_batch_size: %d\n", tx_ring->skb_batch_size);
 
     //XXX: DEBUG: Track the batch sizes
     if (tx_ring->skb_batch_size_stats_count < IXGBE_MAX_BATCH_SIZE_STATS) {
@@ -1590,7 +1630,7 @@ static netdev_tx_t ixgbe_xmit_batch_purge(struct ixgbe_adapter *adapter,
     tx_ring->skb_batch_pktr_count = 0;
 
     //XXX: DEBUG
-    pr_info ("\n");
+    //pr_info ("\n");
 
     return ret;
 }
@@ -1632,10 +1672,10 @@ netdev_tx_t ixgbe_xmit_frame_ring_batch(struct sk_buff *skb,
     }
 
     //XXX: DEBUG
-    u16 port;
-    port = be16_to_cpu(*((__be16 *) &skb->data[skb_transport_offset (skb)]));
-    pr_info ("ixgbe_xmit_frame_ring_batch: (txq: %d)\n", tx_ring->queue_index);
-    pr_info (" skb->len: %d. src port: %u\n", skb->len, port);
+    //u16 port;
+    //port = be16_to_cpu(*((__be16 *) &skb->data[skb_transport_offset (skb)]));
+    //pr_info ("ixgbe_xmit_frame_ring_batch: (txq: %d)\n", tx_ring->queue_index);
+    //pr_info (" skb->len: %d. src port: %u\n", skb->len, port);
     //pr_info (" tso_or_csum: %d\n", tso_or_csum);
 
     /* Count the number of other ring entries that will be used.  Only TSO or
@@ -1700,6 +1740,11 @@ netdev_tx_t ixgbe_xmit_frame_ring_batch(struct sk_buff *skb,
     skb_batch_data->drv_seg_ftu = tx_ring->skb_batch_seg_count;
     skb_batch_data->desc_count = skb_desc_count;
     skb_batch_data->desc_ftu = tx_ring->next_to_use;
+
+    //pr_info ("txq_%d Adding to batch at index %d: desc_ftu: %d. desc_count: %d. first: %p\n",
+    //         tx_ring->queue_index, tx_ring->skb_batch_size - 1,
+    //         skb_batch_data->desc_ftu, skb_batch_data->desc_count,
+    //         &tx_ring->tx_buffer_info[skb_batch_data->desc_ftu]);
 
     tx_ring->skb_batch_seg_count += drv_segs;
     tx_ring->skb_batch_desc_count += skb_desc_count;
