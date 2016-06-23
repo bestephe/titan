@@ -11520,6 +11520,7 @@ no_info_string:
         pr_info (" use_pkt_ring: %u\n", adapter->use_pkt_ring);
         pr_info (" use_sgseg: %u\n", adapter->use_sgseg);
         pr_info (" xmit_batch: %u\n", adapter->xmit_batch);
+        pr_err (" IXGBE_MAX_XMIT_BATCH_SIZE: %d\n", IXGBE_MAX_XMIT_BATCH_SIZE);
 
 	return 0;
 

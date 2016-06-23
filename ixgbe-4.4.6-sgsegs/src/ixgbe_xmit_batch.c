@@ -641,19 +641,6 @@ map_fpp_end:
 
 }
 
-struct ixgbe_seg_batch_data {
-    struct ixgbe_skb_batch_data *skb_batch_data;
-    struct ixgbe_tx_buffer *first;
-    u32 data_len;
-    u32 data_offset;
-    u16 desc_count;
-    u16 desc_ftu;
-    u16 hr_count;
-    u16 hr_ftu;
-    u8 hdr_len;
-    u8 last_seg;
-};
-
 static void ixgbe_tx_prepare_segs(struct ixgbe_ring *tx_ring,
                                   struct ixgbe_seg_batch_data *seg_data_array,
                                   struct ixgbe_skb_batch_data *skb_data,
@@ -686,10 +673,11 @@ static void ixgbe_tx_prepare_segs(struct ixgbe_ring *tx_ring,
 
     if (!skb_data->tso_or_csum || skb_data->drv_segs == 1) {
         BUG_ON (skb_data->drv_segs != 1);
-        BUG_ON (skb_data->hdr_len != 0);
+        //BUG_ON (skb_data->hdr_len != 0);
 
         seg_data_array[0].skb_batch_data = skb_data;
         seg_data_array[0].first = first;
+        seg_data_array[0].ntw = NULL;
         seg_data_array[0].data_len = data_len;
         seg_data_array[0].data_offset = 0;
         seg_data_array[0].desc_count = skb_data->desc_count;
@@ -725,6 +713,7 @@ static void ixgbe_tx_prepare_segs(struct ixgbe_ring *tx_ring,
             cur_seg_data->data_len = pkt_data_len;
             cur_seg_data->data_offset = data_offset;
         }
+        cur_seg_data->ntw = NULL;
         cur_seg_data->desc_count = desc_per_seg;
         cur_seg_data->desc_ftu = (skb_data->desc_ftu + (gso_seg * desc_per_seg)) % tx_ring->count;
         cur_seg_data->hr_count = hr_per_seg;
@@ -801,7 +790,9 @@ static void ixgbe_tx_enqueue_sgsegs_batch(struct ixgbe_ring *tx_ring,
 
 fpp_start:
 
-        //TODO: If this batch is too big, use smaller batch sizes to iterate over it
+        /* Prefetch the seg_data. */
+        FPP_PSS(&seg_data_array[I], sgseg_fpp_seg_data1, skb_batch_seg_count);
+sgseg_fpp_seg_data1:
 
         cur_seg_batch[I] = &seg_data_array[I];
         first[I] = cur_seg_batch[I]->first;
@@ -849,6 +840,13 @@ fpp_start:
          * packet header does not need to be copied for the first packet. */
         if (data_offset[I] == 0) {
 
+                /* prefetch */
+                prefetch(tx_ring);
+                prefetch(first[I]);
+                prefetchw(IXGBE_TX_CTXTDESC(tx_ring, desc_i[I]));
+                FPP_PSS(skb, sgseg_fpp_tso_bs, skb_batch_seg_count);
+sgseg_fpp_tso_bs:
+
                 tmp_hdr_len = 0;
                 tso[I] = ixgbe_tso_batch_safe(tx_ring, first[I], desc_i[I], &tmp_hdr_len);
                 csum[I] = 0;
@@ -862,8 +860,8 @@ fpp_start:
                 /* Update the descriptor if a context descriptor was used. */
                 if (tso[I] || csum[I]) {
                     //BUG_ON (!cur_seg_batch[I]->skb_batch_data->tso_or_csum);
-                    BUG_ON (((cur_seg_batch[I]->desc_ftu + cur_seg_batch[I]->desc_count) % tx_ring->count) ==
-                            desc_i[I]);
+                    BUG_ON (((cur_seg_batch[I]->desc_ftu + cur_seg_batch[I]->desc_count) %
+                            tx_ring->count) == desc_i[I]);
 
                     desc_i[I]++;
                     tx_desc[I]++;
@@ -873,6 +871,9 @@ fpp_start:
                     }
                     tx_desc[I]->read.olinfo_status = 0;
                     BUG_ON (desc_i[I] >= tx_ring->count);
+
+                    //Prefetch the tx_buffer, but do not swap
+                    prefetch(&tx_ring->tx_buffer_info[desc_i[I]]);
                 }
 
                 /* The above functions can update tx_flags */
@@ -915,7 +916,7 @@ fpp_start:
                 /* Update the first tx data descriptor */
                 dma[I] = first[I]->dma;
                 tx_desc[I]->read.buffer_addr = cpu_to_le64(dma[I]);
-        tx_desc[I]->read.cmd_type_len = cpu_to_le32(cmd_type[I] ^ size[I]);
+                tx_desc[I]->read.cmd_type_len = cpu_to_le32(cmd_type[I] ^ size[I]);
 
                 //pr_info (" used desc: %d\n", i);
 
@@ -960,16 +961,16 @@ fpp_start:
                 }
 
                 /* Move to the next descriptor */
-                BUG_ON (((cur_seg_batch[I]->desc_ftu + cur_seg_batch[I]->desc_count) % tx_ring->count) ==
-                        desc_i[I]);
-        desc_i[I]++;
-        tx_desc[I]++;
-        if (desc_i[I] == tx_ring->count) {
-            tx_desc[I] = IXGBE_TX_DESC(tx_ring, 0);
-            desc_i[I] = 0;
-        }
-        tx_desc[I]->read.olinfo_status = 0;
-                BUG_ON (desc_i[I] >= tx_ring->count);
+                BUG_ON (((cur_seg_batch[I]->desc_ftu + cur_seg_batch[I]->desc_count) %
+                        tx_ring->count) == desc_i[I]);
+                desc_i[I]++;
+                tx_desc[I]++;
+                if (desc_i[I] == tx_ring->count) {
+                    tx_desc[I] = IXGBE_TX_DESC(tx_ring, 0);
+                    desc_i[I] = 0;
+                }
+                tx_desc[I]->read.olinfo_status = 0;
+                        BUG_ON (desc_i[I] >= tx_ring->count);
 
         } else {
                 //XXX: TODO: this has a race condition because
@@ -981,6 +982,14 @@ fpp_start:
                                       first[I]->type_tucmd, first[I]->mss_l4len_idx,
                                       desc_i[I]);
 #endif
+
+                /* prefetch */
+                prefetch(tx_ring);
+                prefetch(first[I]);
+                prefetchw(IXGBE_TX_CTXTDESC(tx_ring, desc_i[I]));
+                FPP_PSS(skb, sgseg_fpp_tso_bs2, skb_batch_seg_count);
+sgseg_fpp_tso_bs2:
+
 
                 /* It is tempting to use the saved values, but that causes a
                  * race condition.  For now, just rebuild the data. */
@@ -1025,6 +1034,17 @@ fpp_start:
                  * descriptor must contain the entire length of the TSO
                  * segment (data_len). */
                 ixgbe_tx_olinfo_status(tx_desc[I], tx_flags[I], data_len[I]);
+
+                /* Prefetch and swap before copying over the packet header. */
+                //TODO: Calling FPP_PSS twice here is probably dumb.
+                FPP_PSS(skb[I], sgseg_fpp_hdrcp_skb, skb_batch_seg_count);
+sgseg_fpp_hdrcp_skb:
+                prefetch(tx_buffer[I]);
+                prefetch(tx_desc[I]);
+                prefetchw(tx_hdr[I]->raw);
+                prefetch(cur_seg_batch[I]);
+                FPP_PSS(skb[I]->data, sgseg_fpp_hdrcp_data, skb_batch_seg_count);
+sgseg_fpp_hdrcp_data:
 
                 /* Copy the header to a header ring and update the TCP
                  * sequence number given the current data offset. */
@@ -1113,7 +1133,7 @@ fpp_start:
         frag_offset[I] = 0;
         frag_i[I] = 0;
         frag_size[I] = size[I];
-    for (frag[I] = &skb_shinfo(skb[I])->frags[0];; frag[I]++) {
+        for (frag[I] = &skb_shinfo(skb[I])->frags[0];; frag[I]++) {
                 //pr_err ("ixgbe_tx_enqueue_sgsegs: nr_frags: %d\n",
                 //        skb_shinfo(skb)->nr_frags);
                 //pr_err (" frag_i: %d\n", frag_i);
@@ -1201,15 +1221,15 @@ fpp_start:
 
                 /* Update loop variables for the next fragment */
                 frag_size[I] = skb_frag_size(frag[I]);
-        size[I] = frag_size[I];
+                size[I] = frag_size[I];
                 //XXX: Trying to copy the FCOE code from the existing code
                 // leads to a bug.  The above code already limits the size to
                 // data_size anyways, so there shouldn't be any problems.
 
-        dma[I] = first[I]->frag_dma[frag_i[I]].fdma;
+                dma[I] = first[I]->frag_dma[frag_i[I]].fdma;
                 BUG_ON (first[I]->frag_dma[frag_i[I]].flen != frag_size[I]);
 
-        tx_buffer[I] = &tx_ring->tx_buffer_info[desc_i[I]];
+                tx_buffer[I] = &tx_ring->tx_buffer_info[desc_i[I]];
                 //ixgbe_tx_buffer_clean(tx_buffer);
                 tx_buffer[I]->hr_i = -1;
                 tx_buffer[I]->hr_i_valid = false;
@@ -1217,61 +1237,43 @@ fpp_start:
                 /* iterating without a loop variable and then updating it at
                  * the end is dumb. */
                 frag_i[I]++;
-    }
+        }
 
 last_desc:
-        /* DEBUG: Error checking that we sent all of the data */
-        //TODO
+    /* DEBUG: Error checking that we sent all of the data */
+    //TODO
 
     /* write last descriptor with RS and EOP bits */
     cmd_type[I] |= size[I] | IXGBE_TXD_CMD;
     tx_desc[I]->read.cmd_type_len = cpu_to_le32(cmd_type[I]);
 
-        /* only update data on the last segment */
-        if (cur_seg_batch[I]->last_seg) {
-            //pr_info ("ixgbe_tx_enqueue_sgsegs_batch:\n");
-            //pr_info (" tx-%d: Updating BQL: %d bytes (first: %p, first_i: %d)\n",
-            //    tx_ring->queue_index, first->bytecount, first,
-            //        cur_seg_batch->skb_batch_data->desc_ftu);
+    /* Prefetch the cur_seg_batch before writing it */
+    prefetchw(IXGBE_TX_DESC(tx_ring, desc_i[I]));
+    FPP_PSS(cur_seg_batch[I], sgseg_fpp_lastd_cursegbatch,
+            skb_batch_seg_count);
+sgseg_fpp_lastd_cursegbatch:
 
-            /* Note how much data has been sent */
-            netdev_tx_sent_queue(txring_txq(tx_ring), first[I]->bytecount);
+    /* Save the descriptor for setting next_to_watch later. */
+    if (cur_seg_batch[I]->last_seg) {
+        cur_seg_batch[I]->ntw = tx_desc[I];
+    } else {
+        BUG_ON (cur_seg_batch[I]->ntw != NULL);
+    }
 
-            /* set the timestamp */
-            first[I]->time_stamp = jiffies;
+    //TODO: we should be asserting that we are never equal to
+    // cur_seg_batch->desc_ftu + desc_count.
+    //TODO: assert in more places
+    if (((cur_seg_batch[I]->desc_ftu + cur_seg_batch[I]->desc_count) % tx_ring->count) == desc_i[I]) {
+        pr_err ("desc_ftu: %d. desc_count: %d. desc_i: %d\n",
+                cur_seg_batch[I]->desc_ftu, cur_seg_batch[I]->desc_count, desc_i[I]);
+                
+    }
+    BUG_ON (((cur_seg_batch[I]->desc_ftu + cur_seg_batch[I]->desc_count) % tx_ring->count) == desc_i[I]);
 
-            //TODO: should this happen on every seg or only the last seg?
-            /*
-             * Force memory writes to complete before letting h/w know there
-             * are new descriptors to fetch.  (Only applicable for weak-ordered
-             * memory model archs, such as IA-64).
-             *
-             */
-            wmb();
-
-        /* set next_to_watch value indicating a packet is present */
-        /* This code is less subtle than I've previous thought because the NIC
-         * actually does set the DD bit, but still be compatible with subtlety. */
-            BUG_ON (first[I]->next_to_watch != NULL);
-            //pr_info (" first (%p) next_to_watch = %p (%d)\n",
-            //    first, tx_desc, desc_i);
-            first[I]->next_to_watch = tx_desc[I];
-
-            //XXX: DEBUG
-            //pr_info (" setting next_to_watch: %p\n", tx_desc);
-            //pr_info (" first: %p\n", first);
-            //pr_info (" tx_desc[0]: %p\n", IXGBE_TX_DESC(tx_ring, 0));
-        }
-
-        //TODO: we should be asserting that we are never equal to
-        // cur_seg_batch->desc_ftu + desc_count.
-        //TODO: assert in more places
-        BUG_ON (((cur_seg_batch[I]->desc_ftu + cur_seg_batch[I]->desc_count) % tx_ring->count) == desc_i[I]);
-
-        /* Move on to the next descriptor after finishing setting the flags
-         * for the last data descriptor. */
+    /* Move on to the next descriptor after finishing setting the flags
+     * for the last data descriptor. */
     desc_i[I]++;
-        tx_desc[I]++;
+    tx_desc[I]++;
     if (desc_i[I] == tx_ring->count) {
             tx_desc[I] = IXGBE_TX_DESC(tx_ring, 0);
             desc_i[I] = 0;
@@ -1315,11 +1317,54 @@ fpp_end:
     batch_rips[I] = &&fpp_end;
     iMask = FPP_SET(iMask, I);
     if(iMask == (1 << skb_batch_seg_count) - 1) {
-        return;
+        goto sgseg_fpp_nobatch;
     }
     I = (I + 1) % skb_batch_seg_count;
     goto *batch_rips[I];
 
+
+sgseg_fpp_nobatch:
+
+    /* To avoid a race condition, next_to_watch and etc. should only be set
+     * after we are done batching. */
+    for (I = 0; I < skb_batch_seg_count; I++) {
+        /* only update data on the last segment */
+        if (cur_seg_batch[I]->last_seg) {
+            //pr_info ("ixgbe_tx_enqueue_sgsegs_batch:\n");
+            //pr_info (" tx-%d: Updating BQL: %d bytes (first: %p, first_i: %d)\n",
+            //    tx_ring->queue_index, first->bytecount, first,
+            //        cur_seg_batch->skb_batch_data->desc_ftu);
+
+            /* Note how much data has been sent */
+            netdev_tx_sent_queue(txring_txq(tx_ring), first[I]->bytecount);
+
+            /* set the timestamp */
+            first[I]->time_stamp = jiffies;
+
+            //TODO: should this happen on every seg or only the last seg?
+            /*
+             * Force memory writes to complete before letting h/w know there
+             * are new descriptors to fetch.  (Only applicable for weak-ordered
+             * memory model archs, such as IA-64).
+             *
+             */
+            wmb();
+
+            /* set next_to_watch value indicating a packet is present */
+            /* This code is less subtle than I've previous thought because the NIC
+             * actually does set the DD bit, but still be compatible with subtlety. */
+            BUG_ON (first[I]->next_to_watch != NULL);
+            BUG_ON (cur_seg_batch[I]->ntw == NULL);
+            //pr_info (" first (%p) next_to_watch = %p (%d)\n",
+            //    first, tx_desc, desc_i);
+            first[I]->next_to_watch = cur_seg_batch[I]->ntw;
+
+            //XXX: DEBUG
+            //pr_info (" setting next_to_watch: %p\n", tx_desc);
+            //pr_info (" first: %p\n", first);
+            //pr_info (" tx_desc[0]: %p\n", IXGBE_TX_DESC(tx_ring, 0));
+        }
+    }
 }
 
 static void ixgbe_tx_enqueue_sgsegs_batch_nogoto(struct ixgbe_ring *tx_ring,
@@ -1860,7 +1905,10 @@ last_desc:
 static netdev_tx_t ixgbe_xmit_batch_map_sgseg(struct ixgbe_adapter *adapter,
                                               struct ixgbe_ring *tx_ring)
 {
-    struct ixgbe_seg_batch_data seg_data[tx_ring->skb_batch_seg_count]; 
+    //XXX: BUG: I think allocating this data on the stack has been causing
+    // problems.  I'm trying out pre-allocating it now.
+    //struct ixgbe_seg_batch_data seg_data[tx_ring->skb_batch_seg_count]; 
+    struct ixgbe_seg_batch_data *seg_data = tx_ring->seg_batch;
 
     /* Local batch variables (ixgbe_xmit_frame_ring). */
     struct ixgbe_skb_batch_data *_cur_skb_data[IXGBE_MAX_XMIT_BATCH_SIZE];
@@ -1894,6 +1942,9 @@ static netdev_tx_t ixgbe_xmit_batch_map_sgseg(struct ixgbe_adapter *adapter,
 
     /* iMask needs to be larger than a u64 for larger batch sizes */
     BUG_ON (IXGBE_MAX_XMIT_BATCH_SIZE > 64);
+
+    /* There should not be more segments than we have room for. */
+    BUG_ON (tx_ring->skb_batch_seg_count > IXGBE_MAX_SEG_BATCH);
 
     for (temp_index = 0; temp_index < tx_ring->skb_batch_size; temp_index++) {
         batch_rips[temp_index] = &&sgseg_fpp_start;

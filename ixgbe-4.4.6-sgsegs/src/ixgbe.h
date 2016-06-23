@@ -278,7 +278,8 @@ struct ixgbe_pkt_hdr {
 //TODO: perhaps current batch size should be a module parameter to make
 //measurement easier.
 #define IXGBE_MAX_XMIT_BATCH_SIZE           (16)
-#define IXGBE_MAX_XMIT_BATCH_SIZE_          (15)
+
+#define IXGBE_MAX_SEG_BATCH                 (512)
 
 static inline u16 ixgbe_txd_count(struct sk_buff *skb)
 {
@@ -334,7 +335,14 @@ static inline u16 ixgbe_txd_count_sgsegs(struct sk_buff *skb, u8 hdr_len,
          *          (+ 1 desc for data descriptor)
          *          (?+1 desc if the segment falls on a boundary)
          */
-        per_seg_count = 4;
+        per_seg_count = 5;
+
+        //XXX: BIG HACK
+        if (drv_gso_size >= 4000) {
+            per_seg_count = 6;
+        } else if (drv_gso_size >= 15000) {
+            per_seg_count = 11;
+        }
 
         count = per_seg_count * drv_gso_segs;
 
@@ -425,6 +433,20 @@ struct ixgbe_skb_batch_data {
                           * scheduling */
         u8 tso_or_csum;
         u8 hdr_len;
+};
+
+struct ixgbe_seg_batch_data {
+    struct ixgbe_skb_batch_data *skb_batch_data;
+    struct ixgbe_tx_buffer *first;
+    union ixgbe_adv_tx_desc *ntw;
+    u32 data_len;
+    u32 data_offset;
+    u16 desc_count;
+    u16 desc_ftu;
+    u16 hr_count;
+    u16 hr_ftu;
+    u8 hdr_len;
+    u8 last_seg;
 };
 
 static inline void ixgbe_tx_buffer_clean(struct ixgbe_tx_buffer *tx_buffer)
@@ -562,6 +584,9 @@ struct ixgbe_ring {
         u16 skb_batch_desc_count;
         u16 skb_batch_hr_count;
         u16 skb_batch_pktr_count;
+
+        /* Array of segs to be transmitted in a batch. */
+        struct ixgbe_seg_batch_data seg_batch[IXGBE_MAX_SEG_BATCH];
 
         //XXX: DEBUG: Check the batch sizes
         u8 skb_batch_size_stats[IXGBE_MAX_BATCH_SIZE_STATS];
