@@ -5398,6 +5398,7 @@ static void ixgbe_clean_tx_ring(struct ixgbe_ring *tx_ring)
         memset(tx_ring->header_ring, 0, tx_ring->header_ring_len);
         memset(tx_ring->pkt_ring, 0, tx_ring->pkt_ring_len);
 
+        /* Zero out the ring head and tail */
 	tx_ring->next_to_use = 0;
 	tx_ring->next_to_clean = 0;
         tx_ring->hr_next_to_clean = 0;

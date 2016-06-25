@@ -277,7 +277,7 @@ struct ixgbe_pkt_hdr {
 //reasonable value of this should be.
 //TODO: perhaps current batch size should be a module parameter to make
 //measurement easier.
-#define IXGBE_MAX_XMIT_BATCH_SIZE           (16)
+#define IXGBE_MAX_XMIT_BATCH_SIZE           (4)
 
 #define IXGBE_MAX_SEG_BATCH                 (512)
 
@@ -335,7 +335,7 @@ static inline u16 ixgbe_txd_count_sgsegs(struct sk_buff *skb, u8 hdr_len,
          *          (+ 1 desc for data descriptor)
          *          (?+1 desc if the segment falls on a boundary)
          */
-        per_seg_count = 5;
+        per_seg_count = 6;
 
         //XXX: BIG HACK
         if (drv_gso_size >= 4000) {
