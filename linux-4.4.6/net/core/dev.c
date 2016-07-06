@@ -3002,19 +3002,68 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 	struct sock *sk = skb->sk;
 	int queue_index = sk_tx_queue_get(sk);
 
+#ifdef CONFIG_DQA
+	bool slow;
+#endif
+
 	if (queue_index < 0 || skb->ooo_okay ||
 	    queue_index >= dev->real_num_tx_queues) {
 		int new_index = get_xps_queue(dev, skb);
 		if (new_index < 0)
 			new_index = skb_tx_hash(dev, skb);
 
+
 		if (queue_index != new_index && sk &&
 		    sk_fullsock(sk) &&
-		    rcu_access_pointer(sk->sk_dst_cache))
+		    rcu_access_pointer(sk->sk_dst_cache)) {
+
+#ifdef CONFIG_DQA
+			struct netdev_queue *txq;
+
+			/* Update the count for the old queue */
+			if (queue_index >= 0) {
+			    txq = netdev_get_tx_queue(dev, queue_index);
+			    //XXX: Should this be its own function instead?
+			    atomic_dec(&txq->tx_sk_enqcnt);
+			}
+			
+			/* Update the count for the new queue */
+			txq = netdev_get_tx_queue(dev, new_index);
+			//XXX: Should this be its own function instead?
+			atomic_inc(&txq->tx_sk_enqcnt);
+
+			/* TODO: is locking needed here? */
+			slow = lock_sock_fast(sk);
+#endif
+
 			sk_tx_queue_set(sk, new_index);
+
+#ifdef CONFIG_DQA
+			/* TODO: is locking needed here? */
+			/* XXX: UGLY */
+			unlock_sock_fast(sk, slow);
+#endif
+		}
 
 		queue_index = new_index;
 	}
+
+#ifdef CONFIG_DQA
+	/* XXX: I wanted to mark the skb as enqueued in __dev_queue_xmit(...),
+	 * but this could currently lead to a bug.  Specifically, if a device
+	 * driver doesn't use this __ndetdev_pick_tx, then counts should not be
+	 * maintained and updated.  However, if the skb is marked as enqueued
+	 * outside of this function, then the count will be decremented but not
+	 * incremented. */
+	/* XXX: However, this is the wrong place to do this because
+	 * netdev_cap_txqueue could change queue_index in netdev_pick_tx(...)!
+	 * I don't know exactly how this should be handled right now. */
+	/* TODO: is locking needed here? Having to acquire a lock for every skb
+	 * seems wrong. */
+	slow = lock_sock_fast(sk);
+	sk_tx_enq(sk, skb);
+	unlock_sock_fast(sk, slow);
+#endif
 
 	return queue_index;
 }
@@ -3111,6 +3160,14 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 
 	txq = netdev_pick_tx(dev, skb, accel_priv);
 	q = rcu_dereference_bh(txq->qdisc);
+
+#ifdef CONFIG_DQA
+        /* Update usage counters for both the sk and txq */
+	/* XXX: TODO: I wanted to update the counters here, but currently this
+	 * happens in some combination of __netdev_pick_tx(...) and
+	 * netdev_pick_tx(...).  I'm pretty sure the current implementation has
+	 * a bug if the device uses its own pick tx function. */
+#endif
 
 #ifdef CONFIG_NET_CLS_ACT
 	skb->tc_verd = SET_TC_AT(skb->tc_verd, AT_EGRESS);
@@ -6556,6 +6613,9 @@ static void netdev_init_one_queue(struct net_device *dev,
 	queue->dev = dev;
 #ifdef CONFIG_BQL
 	dql_init(&queue->dql, HZ);
+#endif
+#ifdef CONFIG_DQA
+	atomic_set(&queue->tx_sk_enqcnt, 0);
 #endif
 }
 

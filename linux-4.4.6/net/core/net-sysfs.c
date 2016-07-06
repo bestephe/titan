@@ -1166,6 +1166,29 @@ static struct attribute_group dql_group = {
 };
 #endif /* CONFIG_BQL */
 
+#ifdef CONFIG_DQA
+
+static ssize_t dqa_show_enqcnt(struct netdev_queue *queue,
+			       struct netdev_queue_attribute *attr,
+			       char *buf)
+{
+	return sprintf(buf, "%d\n", atomic_read(&queue->tx_sk_enqcnt));
+}
+
+static struct netdev_queue_attribute dqa_enqcnt_attribute =
+	__ATTR(enqcnt, S_IRUGO, dqa_show_enqcnt, NULL);
+
+static struct attribute *dqa_attrs[] = {
+	&dqa_enqcnt_attribute.attr,
+	NULL
+};
+
+static struct attribute_group dqa_group = {
+	.name  = "queue_assignment",
+	.attrs  = dqa_attrs,
+};
+#endif /* CONFIG_DQA */
+
 #ifdef CONFIG_XPS
 static ssize_t show_xps_map(struct netdev_queue *queue,
 			    struct netdev_queue_attribute *attribute, char *buf)
@@ -1293,6 +1316,12 @@ static int netdev_queue_add_kobject(struct net_device *dev, int index)
 		goto exit;
 #endif
 
+#ifdef CONFIG_DQA
+	error = sysfs_create_group(kobj, &dqa_group);
+	if (error)
+		goto exit;
+#endif
+
 	kobject_uevent(kobj, KOBJ_ADD);
 	dev_hold(queue->dev);
 
@@ -1323,6 +1352,9 @@ netdev_queue_update_kobjects(struct net_device *dev, int old_num, int new_num)
 
 #ifdef CONFIG_BQL
 		sysfs_remove_group(&queue->kobj, &dql_group);
+#endif
+#ifdef CONFIG_DQA
+		sysfs_remove_group(&queue->kobj, &dqa_group);
 #endif
 		kobject_put(&queue->kobj);
 	}

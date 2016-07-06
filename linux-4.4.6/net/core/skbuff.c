@@ -635,8 +635,52 @@ fastpath:
 	kmem_cache_free(skbuff_fclone_cache, fclones);
 }
 
+void skb_dequeue_from_sk(struct sk_buff *skb)
+{
+#ifdef CONFIG_DQA
+	struct netdev_queue *txq;
+	//int queue_mapping_ver;
+	bool slow;
+
+	/* TODO: I think this the best location for logging the dequeing of the
+	 * skb from its sk */
+	BUG_ON (skb->enq_cnt > 1);
+	if (skb->enq_cnt && skb->sk && skb->queue_mapping_ver ==
+	     atomic_read(&skb->sk->sk_tx_queue_mapping_ver)) {
+		/* XXX: I don't know if lock_sock(...) or lock_sock_fast(...)
+		 * is more appropriate. */
+		/* Note: this implies that the socket is locked every time an
+		 * skb is freed! */
+		slow = lock_sock_fast(skb->sk);
+
+		if (skb->queue_mapping_ver ==
+		    atomic_read(&skb->sk->sk_tx_queue_mapping_ver)) {
+			/* XXX: This code being here in the skbuff file seems like the
+			 * wrong location to me. */
+			if (sk_tx_deq_and_test(skb->sk, skb)) {
+				sk_tx_queue_clear(skb->sk);
+
+				/* The tx queue also needs to be updated at the same time */
+				txq = netdev_get_tx_queue(skb->dev, skb->queue_mapping);
+				//XXX: Should this be its own function instead?
+				atomic_dec(&txq->tx_sk_enqcnt);
+			}
+		}
+
+		/* XXX: maybe release_sock(...)? */
+		unlock_sock_fast(skb->sk, slow);
+	}
+#endif
+}
+
 static void skb_release_head_state(struct sk_buff *skb)
 {
+/* XXX: as is, this call does not need to be surrounded by an ifdef because
+ * internally skb_dequeue_from_sk uses conditional compilation. */
+#ifdef CONFIG_DQA
+	skb_dequeue_from_sk(skb);
+#endif
+
 	skb_dst_drop(skb);
 #ifdef CONFIG_XFRM
 	secpath_put(skb->sp);
@@ -672,6 +716,13 @@ static void skb_release_all(struct sk_buff *skb)
 
 void __kfree_skb(struct sk_buff *skb)
 {
+#ifdef CONFIG_DQA
+	/* TODO: is this the best location for updating the sk's enqueued
+	 * count? */
+	/* XXX: Currently I'm thinking that skb_release_head_state(...) should
+	 * be the right location to note the dequeuing of the skb. */
+#endif
+
 	skb_release_all(skb);
 	kfree_skbmem(skb);
 }
@@ -772,6 +823,16 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	 * It is not yet because we do not want to have a 16 bit hole
 	 */
 	new->queue_mapping = old->queue_mapping;
+
+#ifdef CONFIG_DQA
+	new->queue_mapping_ver = old->queue_mapping_ver;
+	/* Note : keeping track of the number of times an skb has been
+	 * enqueued is complicated by the potential to clone and segment skb's
+	 * after they have been "enqueued". */
+	/* By the same logic as setting the destructor to NULL in __skb_clone,
+	 * a cloned skb should not be considered as enqueued. */
+	new->enq_cnt = 0;
+#endif
 
 	memcpy(&new->headers_start, &old->headers_start,
 	       offsetof(struct sk_buff, headers_end) -
@@ -3179,6 +3240,15 @@ perform_csum_check:
 			SKB_GSO_CB(nskb)->csum_start =
 			    skb_headroom(nskb) + doffset;
 		}
+
+#ifdef CONFIG_DQA
+		/* TODO: this seems like a good place to update the sk's
+		 * enqueued count if the segmented skb is enqueued. */
+		/* XXX: Because locks are currently acquired, I've moved
+		 * updating the sk to the very end so that the sk only needs to
+		 * be locked once. */ 
+#endif
+
 	} while ((offset += len) < head_skb->len);
 
 	/* Some callers want to get the end of the list.
@@ -3186,6 +3256,40 @@ perform_csum_check:
 	 * (see validate_xmit_skb_list() for example)
 	 */
 	segs->prev = tail;
+
+#ifdef CONFIG_DQA
+	/* Update the enq_cnt at once because it (currently) requires acquiring
+	 * the sk's sock_lock. */
+	if (head_skb->enq_cnt && head_skb->sk &&
+	    atomic_read(&head_skb->sk->sk_tx_queue_mapping_ver) ==
+	     head_skb->queue_mapping_ver) {
+		struct sk_buff *tskb = segs;
+		struct sock *sk = head_skb->sk;
+		int queue_mapping_ver;
+		bool slow;
+
+		/* XXX: I don't know if lock_sock(...) or lock_sock_fast(...)
+		 * is more appropriate. */
+		slow = lock_sock_fast(sk);
+
+		/* The version could have been updated since checking before
+		 * lock_sock */
+		queue_mapping_ver = atomic_read(&sk->sk_tx_queue_mapping_ver);
+		if (queue_mapping_ver == head_skb->queue_mapping_ver) {
+			do {
+				sk_tx_enq(sk, tskb);
+				BUG_ON (queue_mapping_ver != tskb->queue_mapping_ver);
+				tskb = tskb->next;
+			} while (tskb->next);
+		}
+
+		/* Check version for potentially removing locking later. */
+		BUG_ON(queue_mapping_ver != atomic_read(&sk->sk_tx_queue_mapping_ver));
+
+		/* XXX: maybe release_sock(...)? */
+		unlock_sock_fast(sk, slow);
+	}
+#endif
 
 	/* Following permits correct backpressure, for protocols
 	 * using skb_set_owner_w().

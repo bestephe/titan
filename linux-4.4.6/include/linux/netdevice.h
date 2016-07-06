@@ -588,6 +588,10 @@ struct netdev_queue {
 #ifdef CONFIG_BQL
 	struct dql		dql;
 #endif
+
+#ifdef CONFIG_DQA
+        atomic_t                tx_sk_enqcnt;
+#endif
 	unsigned long		tx_maxrate;
 } ____cacheline_aligned_in_smp;
 

@@ -164,6 +164,13 @@ struct sk_buff *tcp_gso_segment(struct sk_buff *skb,
 			   &skb->sk->sk_wmem_alloc);
 	}
 
+#ifdef CONFIG_DQA
+	/* TODO: TCP Small Queues needs some special code here to play nice.
+	 * Will DQA? */
+	/* XXX: Currently, I think having changed skb_segment is enough to
+	 * support DQA */
+#endif
+
 	delta = htonl(oldlen + (skb_tail_pointer(skb) -
 				skb_transport_header(skb)) +
 		      skb->data_len);

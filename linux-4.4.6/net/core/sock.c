@@ -1667,6 +1667,12 @@ void skb_set_owner_w(struct sk_buff *skb, struct sock *sk)
 #endif
 	skb->destructor = sock_wfree;
 	skb_set_hash_from_sk(skb, sk);
+
+#ifdef CONFIG_DQA
+	//TODO: Does this function need to be updated?
+	//XXX: Currently I think having updated skb_orphan is good enough
+#endif
+
 	/*
 	 * We used to take a refcount on sk, but following operation
 	 * is enough to guarantee sk_free() wont free this sock until

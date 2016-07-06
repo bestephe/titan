@@ -279,6 +279,14 @@ config BQL
 	  queue limits is to reduce latency caused by exessive queueing in
 	  hardware without sacrificing throughput.
 
+config DQA
+	bool "Dynamic Queue Assignment"
+	depends on SYSFS
+	default y
+	---help---
+	  Dynamic queue assignment chooses the transmit queue used for a socket
+	  dynamically over the lifetime of the socket.
+
 config BPF_JIT
 	bool "enable BPF Just In Time compiler"
 	depends on HAVE_BPF_JIT

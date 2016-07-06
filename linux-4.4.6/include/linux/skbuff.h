@@ -589,6 +589,10 @@ struct sk_buff {
 	 */
 	kmemcheck_bitfield_begin(flags1);
 	__u16			queue_mapping;
+#ifdef CONFIG_DQA
+	int			queue_mapping_ver;
+	__u16			enq_cnt;
+#endif
 	__u8			cloned:1,
 				nohdr:1,
 				fclone:2,
@@ -2200,6 +2204,8 @@ static inline void pskb_trim_unique(struct sk_buff *skb, unsigned int len)
 	BUG_ON(err);
 }
 
+void skb_dequeue_from_sk(struct sk_buff *skb);
+
 /**
  *	skb_orphan - orphan a buffer
  *	@skb: buffer to orphan
@@ -2210,7 +2216,16 @@ static inline void pskb_trim_unique(struct sk_buff *skb, unsigned int len)
  */
 static inline void skb_orphan(struct sk_buff *skb)
 {
+/* XXX: as is, this call does not need to be surrounded by an ifdef because
+ * internally skb_dequeue_from_sk uses conditional compilation. */
+#ifdef CONFIG_DQA
+	/* If this skb is marked as enqueued, update the sk before
+	 * orphaning the buffer. */		
+	skb_dequeue_from_sk(skb);
+#endif
+
 	if (skb->destructor) {
+
 		skb->destructor(skb);
 		skb->destructor = NULL;
 		skb->sk		= NULL;

@@ -225,7 +225,15 @@ struct sock_common {
 		struct hlist_node	skc_node;
 		struct hlist_nulls_node skc_nulls_node;
 	};
+
 	int			skc_tx_queue_mapping;
+#ifdef CONFIG_DQA
+	/* XXX: TODO: the next two fields either likely allow for a race
+	 * condition or do not need to be atomics because they will be updated
+	 * with a lock held. */
+	atomic_t		skc_tx_queue_mapping_ver;
+	atomic_t		skc_tx_enqcnt;
+#endif
 	union {
 		int		skc_incoming_cpu;
 		u32		skc_rcv_wnd;
@@ -328,6 +336,11 @@ struct sock {
 #define sk_nulls_node		__sk_common.skc_nulls_node
 #define sk_refcnt		__sk_common.skc_refcnt
 #define sk_tx_queue_mapping	__sk_common.skc_tx_queue_mapping
+
+#ifdef CONFIG_DQA
+#define sk_tx_queue_mapping_ver	__sk_common.skc_tx_queue_mapping_ver
+#define sk_tx_enqcnt		__sk_common.skc_tx_enqcnt
+#endif
 
 #define sk_dontcopy_begin	__sk_common.skc_dontcopy_begin
 #define sk_dontcopy_end		__sk_common.skc_dontcopy_end
@@ -1636,17 +1649,89 @@ int sk_receive_skb(struct sock *sk, struct sk_buff *skb, const int nested);
 static inline void sk_tx_queue_set(struct sock *sk, int tx_queue)
 {
 	sk->sk_tx_queue_mapping = tx_queue;
+
+#ifdef CONFIG_DQA
+	atomic_set(&sk->sk_tx_enqcnt, 0);
+	atomic_inc(&sk->sk_tx_queue_mapping_ver);
+#endif
 }
 
 static inline void sk_tx_queue_clear(struct sock *sk)
 {
 	sk->sk_tx_queue_mapping = -1;
+
+#ifdef CONFIG_DQA
+	/* Note: BS: I think it is likely necessary for the caller to have
+	 * called lock_sock(sk) before calling this function. */
+
+	/* TODO: XXX: BUG: This function should update the netdev_queue as well
+	 * if enqcnt because it is called from a few different places.
+	 * Unfortunately, I don't think we have the net_device here.  For now,
+	 * I'll just handle this by asserting that this queue does not have any
+	 * enqueued sockets. */
+	/* XXX: is the following check appropriate? */
+	BUG_ON(atomic_read(&sk->sk_tx_enqcnt) != 0);
+
+	/* Increment a tx_queue_mapping_version to avoid a race condition that
+	 * could be possible if __netdev_pick_tx is simultaneously called from
+	 * different cores. */
+	atomic_inc(&sk->sk_tx_queue_mapping_ver);
+
+	atomic_set(&sk->sk_tx_enqcnt, 0);
+#endif
 }
 
 static inline int sk_tx_queue_get(const struct sock *sk)
 {
 	return sk ? sk->sk_tx_queue_mapping : -1;
 }
+
+#ifdef CONFIG_DQA
+static inline void sk_tx_enq(struct sock *sk, struct sk_buff *skb)
+{
+	printk(KERN_ERR "sk_tx_enq: sk: %p. skb: %p\n", sk, skb);
+
+	if (skb->sk == NULL)
+		return;
+
+	BUG_ON(skb->sk != sk);
+	BUG_ON(skb->enq_cnt != 0);
+
+	skb->queue_mapping_ver = atomic_read(&sk->sk_tx_queue_mapping_ver);
+	skb->enq_cnt++;
+
+	atomic_inc(&sk->sk_tx_enqcnt);
+}
+
+/* Note: using the return value of this function to decide to clear the txq can
+ * potentially lead to a race condition. */
+/* Note: should the socket lock be held before clearing and setting
+ * sk_tx_queue_mapping? */
+static inline int sk_tx_deq_and_test(struct sock *sk, struct sk_buff *skb)
+{
+	BUG_ON(skb->sk != sk);
+	BUG_ON(skb->enq_cnt != 1);
+
+	if (skb->queue_mapping_ver != atomic_read(&sk->sk_tx_queue_mapping_ver)) {
+		skb->enq_cnt = 0;
+		return 0;
+	}
+
+	BUG_ON (atomic_read(&sk->sk_tx_enqcnt) <= 0);
+
+	/* Since sk_tx_enq above sets queue_mapping_ver and increments enq_cnt,
+	 * it makes since to analogously test queue_mapping_ver and decrement
+	 * enq_cnt in this function */
+	/* TODO: decide if this is better done here or in
+	 * skb_dequeue_from_sk(...) */
+	skb->enq_cnt--;
+
+	return atomic_dec_and_test(&sk->sk_tx_enqcnt);
+	//TODO: decrement the enqueued count for the txq and clear the
+	//tx_queue_mapping.  Currently, I am planning on doing this elsewhere.
+	//sk_tx_queue_clear(sk);
+}
+#endif
 
 static inline void sk_set_socket(struct sock *sk, struct socket *sock)
 {
@@ -2223,6 +2308,16 @@ static inline struct sock *skb_steal_sock(struct sk_buff *skb)
 {
 	if (skb->sk) {
 		struct sock *sk = skb->sk;
+
+#ifdef CONFIG_DQA
+		/* The enqueued count may need to be updated here as well. */
+		//TODO
+		/* Just assert that the skb should not be enqueued for now. If
+		 * this turns out to not be true, then skb_dequeue_from_sk(skb)
+		 * should be called here. */
+		BUG_ON(skb->enq_cnt > 0);
+		//skb_dequeue_from_sk(skb);
+#endif
 
 		skb->destructor = NULL;
 		skb->sk = NULL;
