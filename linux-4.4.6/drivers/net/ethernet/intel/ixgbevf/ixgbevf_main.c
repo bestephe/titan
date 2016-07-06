@@ -2323,6 +2323,9 @@ static void ixgbevf_set_num_queues(struct ixgbevf_adapter *adapter)
 	unsigned int num_tcs = 0;
 	int err;
 
+        pr_err("ixgbevf_set_num_queues:\n");
+        hw_dbg(&adapter->hw, "ixgbevf_set_num_queues:\n"); 
+
 	/* Start with base case */
 	adapter->num_rx_queues = 1;
 	adapter->num_tx_queues = 1;
@@ -2352,6 +2355,20 @@ static void ixgbevf_set_num_queues(struct ixgbevf_adapter *adapter)
 			break;
 		}
 	}
+
+        //XXX: HACK: Use as many tx queues as possible
+        adapter->num_tx_queues = hw->mac.max_tx_queues;
+
+        pr_err ("ixgbevf_set_num_queues:\n");
+        pr_err (" hw->mac.max_tx_queues: %d\n",
+                hw->mac.max_tx_queues);
+        pr_err (" hw->mac.max_rx_queues: %d\n",
+                hw->mac.max_rx_queues);
+        pr_err ("adapter->num_tx_queues: %d\n",
+                adapter->num_tx_queues);
+        pr_err ("adapter->num_rx_queues: %d\n",
+                adapter->num_rx_queues);
+
 }
 
 /**
@@ -2549,6 +2566,9 @@ static void ixgbevf_reset_interrupt_capability(struct ixgbevf_adapter *adapter)
 static int ixgbevf_init_interrupt_scheme(struct ixgbevf_adapter *adapter)
 {
 	int err;
+
+        pr_err("ixgbevf_init_interrupt_scheme:\n");
+        hw_dbg(&adapter->hw, "ixgbevf_init_interrupt_scheme:\n");
 
 	/* Number of supported queues */
 	ixgbevf_set_num_queues(adapter);
