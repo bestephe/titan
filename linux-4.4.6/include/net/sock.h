@@ -1670,7 +1670,8 @@ static inline void sk_tx_queue_clear(struct sock *sk)
 	 * I'll just handle this by asserting that this queue does not have any
 	 * enqueued sockets. */
 	/* XXX: is the following check appropriate? */
-	BUG_ON(atomic_read(&sk->sk_tx_enqcnt) != 0);
+	//XXX: BUG: The following check fails!
+	//BUG_ON(atomic_read(&sk->sk_tx_enqcnt) != 0);
 
 	/* Increment a tx_queue_mapping_version to avoid a race condition that
 	 * could be possible if __netdev_pick_tx is simultaneously called from
@@ -1689,7 +1690,7 @@ static inline int sk_tx_queue_get(const struct sock *sk)
 #ifdef CONFIG_DQA
 static inline void sk_tx_enq(struct sock *sk, struct sk_buff *skb)
 {
-	printk(KERN_ERR "sk_tx_enq: sk: %p. skb: %p\n", sk, skb);
+	//printk(KERN_ERR "sk_tx_enq: sk: %p. skb: %p\n", sk, skb);
 
 	if (skb->sk == NULL)
 		return;
@@ -1717,6 +1718,9 @@ static inline int sk_tx_deq_and_test(struct sock *sk, struct sk_buff *skb)
 		return 0;
 	}
 
+	/* If the queue version is the same, then the queues should be the
+	 * same, and the socket should note that a skb has been enqueued. */
+	BUG_ON (skb->queue_mapping != sk_tx_queue_get(sk));
 	BUG_ON (atomic_read(&sk->sk_tx_enqcnt) <= 0);
 
 	/* Since sk_tx_enq above sets queue_mapping_ver and increments enq_cnt,

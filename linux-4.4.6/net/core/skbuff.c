@@ -642,19 +642,26 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 	//int queue_mapping_ver;
 	bool slow;
 
+	/* TODO: XXX: Depending on where this is called from, does this imply
+	 * that the sock lock should be called differently?  Currently there
+	 * are four options: lock_sock(...), lock_sock_fast(...),
+	 * bh_lock_sock(...), and no locking. */
+
 	/* TODO: I think this the best location for logging the dequeing of the
 	 * skb from its sk */
 	BUG_ON (skb->enq_cnt > 1);
 	if (skb->enq_cnt && skb->sk && skb->queue_mapping_ver ==
 	     atomic_read(&skb->sk->sk_tx_queue_mapping_ver)) {
 		/* XXX: I don't know if lock_sock(...) or lock_sock_fast(...)
-		 * is more appropriate. */
+		 * is more appropriate. bh_lock_sock(...)? */
 		/* Note: this implies that the socket is locked every time an
 		 * skb is freed! */
 		slow = lock_sock_fast(skb->sk);
 
 		if (skb->queue_mapping_ver ==
 		    atomic_read(&skb->sk->sk_tx_queue_mapping_ver)) {
+			BUG_ON(skb->queue_mapping != sk_tx_queue_get(sk));
+
 			/* XXX: This code being here in the skbuff file seems like the
 			 * wrong location to me. */
 			if (sk_tx_deq_and_test(skb->sk, skb)) {
@@ -664,6 +671,11 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 				txq = netdev_get_tx_queue(skb->dev, skb->queue_mapping);
 				//XXX: Should this be its own function instead?
 				atomic_dec(&txq->tx_sk_enqcnt);
+
+				printk (KERN_ERR "skb_dequeue_from_sk: "
+					"dec txq-%d: now %d\n",
+					skb->queue_mapping,
+					atomic_read(&txq->tx_sk_enqcnt));
 			}
 		}
 
@@ -3268,8 +3280,11 @@ perform_csum_check:
 		int queue_mapping_ver;
 		bool slow;
 
+		/* XXX: BUG: This may be called from many different contexts.
+		 * It seems like the caller should lock. */
 		/* XXX: I don't know if lock_sock(...) or lock_sock_fast(...)
 		 * is more appropriate. */
+		/* XXX: are we in NAPI? is bh_lock_sock(...) correct? */
 		slow = lock_sock_fast(sk);
 
 		/* The version could have been updated since checking before

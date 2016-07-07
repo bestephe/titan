@@ -3020,11 +3020,23 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 #ifdef CONFIG_DQA
 			struct netdev_queue *txq;
 
-			/* Update the count for the old queue */
-			if (queue_index >= 0) {
-			    txq = netdev_get_tx_queue(dev, queue_index);
-			    //XXX: Should this be its own function instead?
-			    atomic_dec(&txq->tx_sk_enqcnt);
+			/* Update the count for the old queue if the old
+			 * queue was in use. */
+			if (queue_index >= 0 &&
+			    queue_index < dev->real_num_tx_queues &&
+			    atomic_read(&sk->sk_tx_enqcnt)) {
+				//XXX: is this needed?
+				//XXX: locking? I think this needs to happen below
+				sk_tx_queue_clear(skb->sk);
+
+				txq = netdev_get_tx_queue(dev, queue_index);
+				//XXX: Should this be its own function instead?
+				atomic_dec(&txq->tx_sk_enqcnt);
+
+				netdev_err(dev, "__netdev_pick_tx: "
+					"dec txq-%d: now %d\n",
+					queue_index,
+					atomic_read(&txq->tx_sk_enqcnt));
 			}
 			
 			/* Update the count for the new queue */
@@ -3032,8 +3044,14 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 			//XXX: Should this be its own function instead?
 			atomic_inc(&txq->tx_sk_enqcnt);
 
+			netdev_err(dev, "__netdev_pick_tx: "
+				"inc txq-%d: now %d\n",
+				new_index, atomic_read(&txq->tx_sk_enqcnt));
+
 			/* TODO: is locking needed here? */
-			slow = lock_sock_fast(sk);
+			bh_lock_sock(sk);
+			//slow = lock_sock_fast(sk);
+			//lock_sock(sk);
 #endif
 
 			sk_tx_queue_set(sk, new_index);
@@ -3041,7 +3059,9 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 #ifdef CONFIG_DQA
 			/* TODO: is locking needed here? */
 			/* XXX: UGLY */
-			unlock_sock_fast(sk, slow);
+			bh_unlock_sock(sk);
+			//unlock_sock_fast(sk, slow);
+			//release_sock(sk);
 #endif
 		}
 
@@ -3060,9 +3080,15 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 	 * I don't know exactly how this should be handled right now. */
 	/* TODO: is locking needed here? Having to acquire a lock for every skb
 	 * seems wrong. */
-	slow = lock_sock_fast(sk);
-	sk_tx_enq(sk, skb);
-	unlock_sock_fast(sk, slow);
+	if (sk && sk_fullsock(sk)) {
+		bh_lock_sock(sk);
+		//slow = lock_sock_fast(sk);
+
+		sk_tx_enq(sk, skb);
+
+		bh_unlock_sock(sk);
+		//unlock_sock_fast(sk, slow);
+	}
 #endif
 
 	return queue_index;
