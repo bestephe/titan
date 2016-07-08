@@ -1659,9 +1659,6 @@ static inline void sk_tx_queue_set(struct sock *sk, int tx_queue)
 #endif
 }
 
-/* XXX: TODO: should this be within a ifdef CONFIG_DQA? */
-void sk_tx_queue_deq(struct sock *sk);
-
 static inline void sk_tx_queue_clear(struct sock *sk)
 {
 #ifdef CONFIG_DQA
@@ -1675,17 +1672,18 @@ static inline void sk_tx_queue_clear(struct sock *sk)
 		//	atomic_read(&sk->sk_tx_queue_mapping_ver));
 
 		//printk (KERN_ERR "sk_tx_queue_clear: Deferring!\n");
+
+		/* XXX: The sk doesn't have a reference to the device! Because
+		 * of this, we cannot clear the sk's sk_tx_queue_mapping until
+		 * either 1) all outstanding skb's are free'd or 2) we have a
+		 * reference to the current txq so that we can update the count
+		 * before clearing the queue. */
 	
 		/* TODO: Set a flag to say the queue needs to be cleared later?
 		 * Currently the queue is cleared as soon as all skb's are
 		 * freed, so I don't think this is need at the moment. */
 
 		return;
-
-		/* XXX: This doesn't work because the sk doesn't have a
-		 * reference to the device! Instead, we have to defer. */
-		//sk_tx_queue_deq(sk);
-
 	}
 #endif
 

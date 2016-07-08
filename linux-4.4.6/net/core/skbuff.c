@@ -701,10 +701,10 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 				//XXX: Should this be its own function instead?
 				atomic_dec(&txq->tx_sk_enqcnt);
 
-				printk (KERN_ERR "skb_dequeue_from_sk: "
-					"dec txq-%d: now %d\n",
-					skb->queue_mapping,
-					atomic_read(&txq->tx_sk_enqcnt));
+				//printk (KERN_ERR "skb_dequeue_from_sk: "
+				//	"dec txq-%d: now %d\n",
+				//	skb->queue_mapping,
+				//	atomic_read(&txq->tx_sk_enqcnt));
 			}
 		}
 

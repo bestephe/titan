@@ -3049,9 +3049,9 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 			atomic_inc(&txq->tx_sk_enqcnt);
 
 			/* XXX: DEBUG */
-			netdev_err(dev, "__netdev_pick_tx: "
-				"inc txq-%d: now %d\n",
-				new_index, atomic_read(&txq->tx_sk_enqcnt));
+			//netdev_err(dev, "__netdev_pick_tx: "
+			//	"inc txq-%d: now %d\n",
+			//	new_index, atomic_read(&txq->tx_sk_enqcnt));
 
 			/* TODO: is locking needed here? */
 			//XXX: Locking here causes deadlock?
