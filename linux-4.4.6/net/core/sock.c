@@ -1309,6 +1309,15 @@ static void sock_copy(struct sock *nsk, const struct sock *osk)
 	memcpy(&nsk->sk_dontcopy_end, &osk->sk_dontcopy_end,
 	       osk->sk_prot->obj_size - offsetof(struct sock, sk_dontcopy_end));
 
+#ifdef CONFIG_DQA
+	/* XXX: Is this right? */
+	/* sk_tx_queue_clear(...) now does not clear if the sockets
+	 * sk_tx_enqcnt is not 0. */
+	atomic_set(&nsk->sk_tx_enqcnt, 0);
+	atomic_set(&nsk->sk_tx_queue_mapping_ver, 0);
+	nsk->sk_tx_queue_mapping = -1;
+#endif
+
 #ifdef CONFIG_SECURITY_NETWORK
 	nsk->sk_security = sptr;
 	security_sk_clone(osk, nsk);
@@ -1361,6 +1370,15 @@ static struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority,
 
 		if (!try_module_get(prot->owner))
 			goto out_free_sec;
+
+#ifdef CONFIG_DQA
+		/* XXX: Is this right? */
+		/* sk_tx_queue_clear(...) now does not clear if the sockets
+		 * sk_tx_enqcnt is not 0. */
+		atomic_set(&sk->sk_tx_enqcnt, 0);
+		atomic_set(&sk->sk_tx_queue_mapping_ver, 0);
+		sk->sk_tx_queue_mapping = -1;
+#endif
 		sk_tx_queue_clear(sk);
 	}
 
@@ -1439,9 +1457,75 @@ struct sock *sk_alloc(struct net *net, int family, gfp_t priority,
 }
 EXPORT_SYMBOL(sk_alloc);
 
+void sk_tx_queue_deq(struct sock *sk)
+{
+#ifdef CONFIG_DQA
+	struct net_device *dev;
+	struct netdev_queue *txq;
+	int queue_index = sk_tx_queue_get(sk);
+
+	/* XXX: This function tries to get the txq through sk_bound_dev_if, but
+	 * this is incorrect! */
+	BUG();
+
+	if (atomic_read(&sk->sk_tx_enqcnt) > 0) {
+		printk (KERN_ERR "sk_tx_queue_deq: sk: %p, needs cleaning!\n", sk);
+		printk (KERN_ERR " queue_index: %d\n", queue_index);
+		printk (KERN_ERR " sk->sk_bound_dev_if: %d\n", sk->sk_bound_dev_if);
+
+		/* XXX: This assertion seems good (if we are marked as
+		 * enqueued, a queue should be assigned).  However, it does not
+		 * hold! */
+		BUG_ON (queue_index < 0);
+	}
+
+	/* If this sock is marked as enqueued, then we should update the txq
+	 * before freeing it. */
+	/* XXX: If locks can't be held, then dev_get_by_index_rcu maybe? */
+	if (atomic_read(&sk->sk_tx_enqcnt) > 0 && sk->sk_bound_dev_if &&
+	    queue_index >= 0) {
+		printk (KERN_ERR "sk_tx_queue_deq: sk: %p, cleaning...\n", sk);
+
+		dev = dev_get_by_index(sock_net(sk), sk->sk_bound_dev_if);
+		if (dev != NULL) {
+			BUG_ON(queue_index > dev->real_num_tx_queues);
+
+			txq = netdev_get_tx_queue(dev, sk_tx_queue_get(sk));
+			//XXX: Should this be its own function instead?
+			atomic_dec(&txq->tx_sk_enqcnt);
+
+			/* Unreference the device once we are done. */
+			dev_put(dev);
+
+			/* XXX: Not needed because we're destroying the sk? */
+			sk_tx_queue_clear(sk);
+
+			printk (KERN_ERR " txq-%d: now %d\n", queue_index,
+				atomic_read(&txq->tx_sk_enqcnt));
+		}
+	}
+
+#endif
+}
+
 void sk_destruct(struct sock *sk)
 {
 	struct sk_filter *filter;
+
+/* XXX: As currently written, this doesn't need to be in an ifdef */
+#ifdef CONFIG_DQA
+	if (atomic_read(&sk->sk_tx_enqcnt) > 0) {
+		printk (KERN_ERR "WARN! sk_destruct: sk: %p, tx_sk_enqcnt: %d\n",
+			sk, atomic_read(&sk->sk_tx_enqcnt));
+		BUG();
+	}
+
+	/* XXX: This doesn't work because the sk doesn't have a
+	 * reference to the device! Instead, we should assert the socket is not
+	 * enqueued. */
+	//sk_tx_queue_deq(sk);
+#endif
+
 
 	if (sk->sk_destruct)
 		sk->sk_destruct(sk);

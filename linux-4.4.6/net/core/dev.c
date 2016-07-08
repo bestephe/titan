@@ -3029,14 +3029,18 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 				//XXX: locking? I think this needs to happen below
 				sk_tx_queue_clear(skb->sk);
 
-				txq = netdev_get_tx_queue(dev, queue_index);
-				//XXX: Should this be its own function instead?
-				atomic_dec(&txq->tx_sk_enqcnt);
+				/* XXX: sk_tx_queue_clear now updates the txq
+				 * because it can be destroyed on its own.
+				 * Because of this, we do not need to update
+				 * the queue again right here. */
+				//txq = netdev_get_tx_queue(dev, queue_index);
+				////XXX: Should this be its own function instead?
+				//atomic_dec(&txq->tx_sk_enqcnt);
 
-				netdev_err(dev, "__netdev_pick_tx: "
-					"dec txq-%d: now %d\n",
-					queue_index,
-					atomic_read(&txq->tx_sk_enqcnt));
+				//netdev_err(dev, "__netdev_pick_tx: "
+				//	"dec txq-%d: now %d\n",
+				//	queue_index,
+				//	atomic_read(&txq->tx_sk_enqcnt));
 			}
 			
 			/* Update the count for the new queue */
@@ -3044,12 +3048,14 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 			//XXX: Should this be its own function instead?
 			atomic_inc(&txq->tx_sk_enqcnt);
 
+			/* XXX: DEBUG */
 			netdev_err(dev, "__netdev_pick_tx: "
 				"inc txq-%d: now %d\n",
 				new_index, atomic_read(&txq->tx_sk_enqcnt));
 
 			/* TODO: is locking needed here? */
-			bh_lock_sock(sk);
+			//XXX: Locking here causes deadlock?
+			//bh_lock_sock(sk);
 			//slow = lock_sock_fast(sk);
 			//lock_sock(sk);
 #endif
@@ -3059,7 +3065,8 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 #ifdef CONFIG_DQA
 			/* TODO: is locking needed here? */
 			/* XXX: UGLY */
-			bh_unlock_sock(sk);
+			//XXX: Locking here causes deadlock?
+			//bh_unlock_sock(sk);
 			//unlock_sock_fast(sk, slow);
 			//release_sock(sk);
 #endif
@@ -3080,13 +3087,15 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 	 * I don't know exactly how this should be handled right now. */
 	/* TODO: is locking needed here? Having to acquire a lock for every skb
 	 * seems wrong. */
-	if (sk && sk_fullsock(sk)) {
-		bh_lock_sock(sk);
+	if (sk && sk_fullsock(sk) && sk_tx_queue_get(sk) >= 0) {
+		//XXX: Locking here causes deadlock?
+		//bh_lock_sock(sk);
 		//slow = lock_sock_fast(sk);
 
 		sk_tx_enq(sk, skb);
 
-		bh_unlock_sock(sk);
+		//XXX: Locking here causes deadlock?
+		//bh_unlock_sock(sk);
 		//unlock_sock_fast(sk, slow);
 	}
 #endif
@@ -3118,6 +3127,15 @@ struct netdev_queue *netdev_pick_tx(struct net_device *dev,
 	}
 
 	skb_set_queue_mapping(skb, queue_index);
+
+#ifdef CONFIG_DQA
+	//XXX: DEBUG
+	if (sk_tx_queue_get(skb->sk) >= 0) {
+		BUG_ON (sk_tx_queue_get(skb->sk) !=
+			skb_get_queue_mapping(skb));
+	}
+#endif
+
 	return netdev_get_tx_queue(dev, queue_index);
 }
 

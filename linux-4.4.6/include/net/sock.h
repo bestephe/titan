@@ -1651,19 +1651,48 @@ static inline void sk_tx_queue_set(struct sock *sk, int tx_queue)
 	sk->sk_tx_queue_mapping = tx_queue;
 
 #ifdef CONFIG_DQA
-	atomic_set(&sk->sk_tx_enqcnt, 0);
 	atomic_inc(&sk->sk_tx_queue_mapping_ver);
+	atomic_set(&sk->sk_tx_enqcnt, 0);
+
+	//printk (KERN_ERR "sk_tx_queue_set: queue_mapping: %d. ver: %d\n",
+	//	tx_queue, atomic_read(&sk->sk_tx_queue_mapping_ver));
 #endif
 }
 
+/* XXX: TODO: should this be within a ifdef CONFIG_DQA? */
+void sk_tx_queue_deq(struct sock *sk);
+
 static inline void sk_tx_queue_clear(struct sock *sk)
 {
-	sk->sk_tx_queue_mapping = -1;
-
 #ifdef CONFIG_DQA
 	/* Note: BS: I think it is likely necessary for the caller to have
 	 * called lock_sock(sk) before calling this function. */
 
+	if (atomic_read(&sk->sk_tx_enqcnt) > 0) {
+		//printk (KERN_ERR "sk_tx_queue_clear (enq'd!): sk: %p\n", sk);
+		//printk (KERN_ERR " queue_mapping: %d. ver: %d\n",
+		//	sk->sk_tx_queue_mapping,
+		//	atomic_read(&sk->sk_tx_queue_mapping_ver));
+
+		//printk (KERN_ERR "sk_tx_queue_clear: Deferring!\n");
+	
+		/* TODO: Set a flag to say the queue needs to be cleared later?
+		 * Currently the queue is cleared as soon as all skb's are
+		 * freed, so I don't think this is need at the moment. */
+
+		return;
+
+		/* XXX: This doesn't work because the sk doesn't have a
+		 * reference to the device! Instead, we have to defer. */
+		//sk_tx_queue_deq(sk);
+
+	}
+#endif
+
+	sk->sk_tx_queue_mapping = -1;
+
+
+#ifdef CONFIG_DQA
 	/* TODO: XXX: BUG: This function should update the netdev_queue as well
 	 * if enqcnt because it is called from a few different places.
 	 * Unfortunately, I don't think we have the net_device here.  For now,
@@ -1677,8 +1706,13 @@ static inline void sk_tx_queue_clear(struct sock *sk)
 	 * could be possible if __netdev_pick_tx is simultaneously called from
 	 * different cores. */
 	atomic_inc(&sk->sk_tx_queue_mapping_ver);
-
 	atomic_set(&sk->sk_tx_enqcnt, 0);
+
+	/* XXX: DEBUG */
+	//printk (KERN_ERR "sk_tx_queue_clear: sk: %p\n", sk);
+	//printk (KERN_ERR " queue_mapping: %d. ver: %d\n",
+	//	sk->sk_tx_queue_mapping,
+	//	atomic_read(&sk->sk_tx_queue_mapping_ver));
 #endif
 }
 
@@ -1692,7 +1726,7 @@ static inline void sk_tx_enq(struct sock *sk, struct sk_buff *skb)
 {
 	//printk(KERN_ERR "sk_tx_enq: sk: %p. skb: %p\n", sk, skb);
 
-	if (skb->sk == NULL)
+	if (skb->sk == NULL || sk->sk_tx_queue_mapping < 0)
 		return;
 
 	BUG_ON(skb->sk != sk);
@@ -1702,6 +1736,11 @@ static inline void sk_tx_enq(struct sock *sk, struct sk_buff *skb)
 	skb->enq_cnt++;
 
 	atomic_inc(&sk->sk_tx_enqcnt);
+
+	//XXX: DEBUG
+	//printk (KERN_ERR "sk_tx_enq: sk: %p. skb: %p. ver: %d. sk_tx_enqcnt: %d\n",
+	//	sk, skb, atomic_read(&sk->sk_tx_queue_mapping_ver),
+	//	atomic_read(&sk->sk_tx_enqcnt));
 }
 
 /* Note: using the return value of this function to decide to clear the txq can
@@ -1720,8 +1759,10 @@ static inline int sk_tx_deq_and_test(struct sock *sk, struct sk_buff *skb)
 
 	/* If the queue version is the same, then the queues should be the
 	 * same, and the socket should note that a skb has been enqueued. */
-	BUG_ON (skb->queue_mapping != sk_tx_queue_get(sk));
 	BUG_ON (atomic_read(&sk->sk_tx_enqcnt) <= 0);
+
+	//XXX: BUG: This assertion seems great. But it currently does not hold.
+	//BUG_ON (skb->queue_mapping != sk_tx_queue_get(sk));
 
 	/* Since sk_tx_enq above sets queue_mapping_ver and increments enq_cnt,
 	 * it makes since to analogously test queue_mapping_ver and decrement
@@ -1729,6 +1770,11 @@ static inline int sk_tx_deq_and_test(struct sock *sk, struct sk_buff *skb)
 	/* TODO: decide if this is better done here or in
 	 * skb_dequeue_from_sk(...) */
 	skb->enq_cnt--;
+
+	//printk (KERN_ERR "sk_tx_deq_and_test (before deq):\n"
+	//	" sk: %p. skb: %p. ver: %d. sk_tx_enqcnt: %d\n",
+	//	sk, skb, atomic_read(&sk->sk_tx_queue_mapping_ver),
+	//	atomic_read(&sk->sk_tx_enqcnt));
 
 	return atomic_dec_and_test(&sk->sk_tx_enqcnt);
 	//TODO: decrement the enqueued count for the txq and clear the

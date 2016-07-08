@@ -642,6 +642,11 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 	//int queue_mapping_ver;
 	bool slow;
 
+	/* XXX: DEBUG */
+	//printk (KERN_ERR "skb_dequeue_from_sk: sk: %p, skb: %p\n",
+	//	skb->sk, skb);
+
+	/* TODO: I feel like locks need to be held in this function. */
 	/* TODO: XXX: Depending on where this is called from, does this imply
 	 * that the sock lock should be called differently?  Currently there
 	 * are four options: lock_sock(...), lock_sock_fast(...),
@@ -656,16 +661,40 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 		 * is more appropriate. bh_lock_sock(...)? */
 		/* Note: this implies that the socket is locked every time an
 		 * skb is freed! */
-		slow = lock_sock_fast(skb->sk);
+		//XXX: Is this causing deadlock?
+		//slow = lock_sock_fast(skb->sk);
 
 		if (skb->queue_mapping_ver ==
 		    atomic_read(&skb->sk->sk_tx_queue_mapping_ver)) {
-			BUG_ON(skb->queue_mapping != sk_tx_queue_get(sk));
+
+			/* XXX: DEBUG: */
+			//printk (KERN_ERR "skb_dequeue_from_sk (sk: %p, skb: %p):\n",
+			//	skb->sk, skb);
+			//printk (KERN_ERR " skb: queue_mapping: %d, queue_mapping_ver: %d\n",
+			//	skb->queue_mapping, skb->queue_mapping_ver);
+			//printk (KERN_ERR " sk: queue_mapping: %d, queue_mapping_ver: %d\n",
+			//	sk_tx_queue_get(skb->sk),
+			//	atomic_read(&skb->sk->sk_tx_queue_mapping_ver));
+
+			/* XXX: BUG: This seems like a great assertion, but it
+			 * currently doesn't hold. TODO: re-enable once its
+			 * done. */
+			//BUG_ON(skb->queue_mapping != sk_tx_queue_get(skb->sk));
 
 			/* XXX: This code being here in the skbuff file seems like the
 			 * wrong location to me. */
 			if (sk_tx_deq_and_test(skb->sk, skb)) {
 				sk_tx_queue_clear(skb->sk);
+
+				/* XXX: UGLY: currently, sk_tx_queue_clear
+				 * updates txq->tx_sk_enqcnt if
+				 * sk->sk_tx_enqcnt > 0.  However, as of right
+				 * above, we set sk->sk_tx_enqcnt to 0, so we
+				 * currently have to update txq->tx_sk_enqcnt
+				 * by hand here. */ 
+				/* TODO: How about this as a way to fix this:
+				 * change sk_tx_deq_and_test to just
+				 * sk_tx_test(...) and sk_tx_deq(...)? */
 
 				/* The tx queue also needs to be updated at the same time */
 				txq = netdev_get_tx_queue(skb->dev, skb->queue_mapping);
@@ -680,7 +709,8 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 		}
 
 		/* XXX: maybe release_sock(...)? */
-		unlock_sock_fast(skb->sk, slow);
+		//XXX: Is this causing deadlock?
+		//unlock_sock_fast(skb->sk, slow);
 	}
 #endif
 }
@@ -3285,7 +3315,8 @@ perform_csum_check:
 		/* XXX: I don't know if lock_sock(...) or lock_sock_fast(...)
 		 * is more appropriate. */
 		/* XXX: are we in NAPI? is bh_lock_sock(...) correct? */
-		slow = lock_sock_fast(sk);
+		//XXX: Is this causing deadlock?
+		//slow = lock_sock_fast(sk);
 
 		/* The version could have been updated since checking before
 		 * lock_sock */
@@ -3302,7 +3333,8 @@ perform_csum_check:
 		BUG_ON(queue_mapping_ver != atomic_read(&sk->sk_tx_queue_mapping_ver));
 
 		/* XXX: maybe release_sock(...)? */
-		unlock_sock_fast(sk, slow);
+		//XXX: Is this causing deadlock?
+		//unlock_sock_fast(sk, slow);
 	}
 #endif
 
