@@ -3025,17 +3025,21 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 			if (queue_index >= 0 &&
 			    queue_index < dev->real_num_tx_queues &&
 			    atomic_read(&sk->sk_tx_enqcnt)) {
-				//XXX: is this needed?
-				//XXX: locking? I think this needs to happen below
+				//XXX: is this needed? locking?
+				netdev_warn(dev, "__netdev_pick_tx: clearing queue with non-zero enqcnt");
+				//XXX: UGLY. But tx_queue_clear only works if
+				//the sk_tx_enqcnt == 0 right now.  Is setting
+				//it back to zero a bad race condition?
+				atomic_set(&sk->sk_tx_enqcnt, 0); 
 				sk_tx_queue_clear(skb->sk);
 
-				/* XXX: sk_tx_queue_clear now updates the txq
-				 * because it can be destroyed on its own.
-				 * Because of this, we do not need to update
-				 * the queue again right here. */
-				//txq = netdev_get_tx_queue(dev, queue_index);
-				////XXX: Should this be its own function instead?
-				//atomic_dec(&txq->tx_sk_enqcnt);
+				/* sk_tx_queue_clear doesn't update the txq
+				 * because it doesn't have a way to get a
+				 * poitner to the txq! I feel like the code in
+				 * this block could be refactored to somewhere
+				 * else.  netdev_sk_enqcnt_dec? */
+				txq = netdev_get_tx_queue(dev, queue_index);
+				netdev_sk_enqcnt_dec(txq);
 
 				//netdev_err(dev, "__netdev_pick_tx: "
 				//	"dec txq-%d: now %d\n",
@@ -3045,8 +3049,7 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 			
 			/* Update the count for the new queue */
 			txq = netdev_get_tx_queue(dev, new_index);
-			//XXX: Should this be its own function instead?
-			atomic_inc(&txq->tx_sk_enqcnt);
+			netdev_sk_enqcnt_inc(txq);
 
 			/* XXX: DEBUG */
 			//netdev_err(dev, "__netdev_pick_tx: "
@@ -6660,6 +6663,8 @@ static void netdev_init_one_queue(struct net_device *dev,
 #endif
 #ifdef CONFIG_DQA
 	atomic_set(&queue->tx_sk_enqcnt, 0);
+	/* Must increment before using first */
+	atomic_set(&queue->tx_sk_trace_maxi, -1); 
 #endif
 }
 

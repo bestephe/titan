@@ -1167,6 +1167,33 @@ static struct attribute_group dql_group = {
 #endif /* CONFIG_BQL */
 
 #ifdef CONFIG_DQA
+static ssize_t dqa_show_sk_trace_reset(struct netdev_queue *queue,
+				       struct netdev_queue_attribute *attr,
+				       char *buf)
+{
+	return sprintf(buf, "%u\n", atomic_read(&queue->tx_sk_trace_maxi));
+}
+
+static ssize_t dqa_set_sk_trace_reset(struct netdev_queue *queue,
+				      struct netdev_queue_attribute *attribute,
+				      const char *buf, size_t len)
+{
+	unsigned int value;
+	int err;
+
+	err = kstrtouint(buf, 10, &value);
+	if (err < 0)
+		return err;
+
+	if (value)
+		atomic_set(&queue->tx_sk_trace_maxi, -1);
+
+	return len;
+}
+
+static struct netdev_queue_attribute dqa_sk_trace_reset_attribute =
+	__ATTR(sk_trace_reset, S_IRUGO | S_IWUSR, dqa_show_sk_trace_reset,
+	    dqa_set_sk_trace_reset);
 
 static ssize_t dqa_show_enqcnt(struct netdev_queue *queue,
 			       struct netdev_queue_attribute *attr,
@@ -1179,6 +1206,7 @@ static struct netdev_queue_attribute dqa_enqcnt_attribute =
 	__ATTR(enqcnt, S_IRUGO, dqa_show_enqcnt, NULL);
 
 static struct attribute *dqa_attrs[] = {
+	&dqa_sk_trace_reset_attribute.attr,
 	&dqa_enqcnt_attribute.attr,
 	NULL
 };

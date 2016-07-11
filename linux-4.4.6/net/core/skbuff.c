@@ -698,8 +698,7 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 
 				/* The tx queue also needs to be updated at the same time */
 				txq = netdev_get_tx_queue(skb->dev, skb->queue_mapping);
-				//XXX: Should this be its own function instead?
-				atomic_dec(&txq->tx_sk_enqcnt);
+				netdev_sk_enqcnt_dec(txq);
 
 				//printk (KERN_ERR "skb_dequeue_from_sk: "
 				//	"dec txq-%d: now %d\n",

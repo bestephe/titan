@@ -329,6 +329,7 @@ static int __net_init dev_proc_net_init(struct net *net)
 	rc = 0;
 out:
 	return rc;
+
 out_ptype:
 	remove_proc_entry("ptype", net->proc_net);
 out_softnet:
@@ -414,10 +415,91 @@ static struct pernet_operations __net_initdata dev_mc_net_ops = {
 	.exit = dev_mc_net_exit,
 };
 
+#ifdef CONFIG_DQA
+static int dev_queues_seq_show(struct seq_file *seq, void *v)
+{
+	struct net_device *dev = v;
+	struct netdev_queue *txq;
+	struct netdev_queue_trace *trace;
+	int queue_i, trace_i;
+
+	if (v == SEQ_START_TOKEN)
+		return 0;
+
+	/* XXX: BUG: This probably needs some locking */
+	//netif_addr_lock_bh(dev);
+
+	//seq_printf(seq, "%-4d %-15s:\n", dev->ifindex, dev->name);
+	seq_printf(seq, "%s:\n", dev->name);
+	for (queue_i = 0; queue_i < dev->real_num_tx_queues; queue_i++) {
+		txq = netdev_get_tx_queue(dev, queue_i);
+		seq_printf(seq, "  txq-%d:\n", queue_i);
+		if (atomic_read(&txq->tx_sk_trace_maxi) < 0) {
+			seq_printf(seq, "    - {ts: 0.0, enqcnt: 0}\n");
+		}
+		for (trace_i = 0;
+		     trace_i <= atomic_read(&txq->tx_sk_trace_maxi) &&
+		     trace_i < DQA_TXQ_TRACE_MAX_ENTRIES; trace_i++) {
+			trace = &txq->tx_sk_trace[trace_i];
+			seq_printf(seq, "    - {ts: %ld.%.9ld, enqcnt: %d}\n",
+				   trace->tv.tv_sec, trace->tv.tv_nsec,
+				   trace->enqcnt);
+		}
+	}
+
+
+	/* XXX: BUG: This probably needs some locking */
+	//netif_addr_unlock_bh(dev);
+	return 0;
+}
+
+static const struct seq_operations dev_queues_seq_ops = {
+	.start = dev_seq_start,
+	.next  = dev_seq_next,
+	.stop  = dev_seq_stop,
+	.show  = dev_queues_seq_show,
+};
+
+static int dev_queues_seq_open(struct inode *inode, struct file *file)
+{
+	return seq_open_net(inode, file, &dev_queues_seq_ops,
+			    sizeof(struct seq_net_private));
+}
+
+static const struct file_operations dev_queues_seq_fops = {
+	.owner	 = THIS_MODULE,
+	.open    = dev_queues_seq_open,
+	.read    = seq_read,
+	.llseek  = seq_lseek,
+	.release = seq_release_net,
+};
+
+static int __net_init dev_queues_net_init(struct net *net)
+{
+	if (!proc_create("dev_queues", 0, net->proc_net, &dev_queues_seq_fops))
+		return -ENOMEM;
+	return 0;
+}
+
+static void __net_exit dev_queues_net_exit(struct net *net)
+{
+	remove_proc_entry("dev_queues", net->proc_net);
+}
+
+static struct pernet_operations __net_initdata dev_queues_net_ops = {
+	.init = dev_queues_net_init,
+	.exit = dev_queues_net_exit,
+};
+#endif
+
 int __init dev_proc_init(void)
 {
 	int ret = register_pernet_subsys(&dev_proc_ops);
 	if (!ret)
-		return register_pernet_subsys(&dev_mc_net_ops);
+		ret = register_pernet_subsys(&dev_mc_net_ops);
+#ifdef CONFIG_DQA
+	if (!ret)
+		ret = register_pernet_subsys(&dev_queues_net_ops);
+#endif
 	return ret;
 }

@@ -554,6 +554,17 @@ enum netdev_queue_state_t {
  * netif_xmit*stopped functions, they should only be using netif_tx_*.
  */
 
+
+#ifdef CONFIG_DQA
+#define DQA_TXQ_TRACE_MAX_ENTRIES	(16384)
+
+struct netdev_queue_trace {
+	//unsigned long		ts;
+	struct timespec		tv;
+	int			enqcnt;
+};
+#endif
+
 struct netdev_queue {
 /*
  * read mostly part
@@ -591,6 +602,10 @@ struct netdev_queue {
 
 #ifdef CONFIG_DQA
         atomic_t                tx_sk_enqcnt;
+
+	/* XXX: DEBUG: */
+	struct netdev_queue_trace tx_sk_trace[DQA_TXQ_TRACE_MAX_ENTRIES];
+	atomic_t		tx_sk_trace_maxi;
 #endif
 	unsigned long		tx_maxrate;
 } ____cacheline_aligned_in_smp;
@@ -1887,6 +1902,65 @@ static inline void netdev_for_each_tx_queue(struct net_device *dev,
 struct netdev_queue *netdev_pick_tx(struct net_device *dev,
 				    struct sk_buff *skb,
 				    void *accel_priv);
+
+#ifdef CONFIG_DQA
+static inline void netdev_sk_enqcnt_trace(struct netdev_queue *txq,
+					  int enqcnt)
+{
+	struct netdev_queue_trace *trace_data;
+	int trace_i;
+
+	/* XXX: This can still race where enqcnt may not be monotonic if two
+	 * threads race for this function. */
+	if (atomic_read(&txq->tx_sk_trace_maxi) <
+	    (DQA_TXQ_TRACE_MAX_ENTRIES - 1)) {
+		trace_i = atomic_inc_return(&txq->tx_sk_trace_maxi);
+		if (trace_i >= DQA_TXQ_TRACE_MAX_ENTRIES)
+			return;
+		trace_data = &txq->tx_sk_trace[trace_i];
+		getnstimeofday(&trace_data->tv);
+		trace_data->enqcnt = enqcnt;
+
+		/* XXX: DEBUG */
+		//printk (KERN_ERR "netdev_sk_enqcnt_trace i=%d: %d @ %ld\n",
+		//	trace_i, enqcnt, trace_data->tv.tv_nsec);
+	}
+}
+
+/*
+ * TXQ enqcnt update functions
+ */
+
+/* TODO: I feel like this function should take in as an argument the socket
+ * that is being added. */
+static inline void netdev_sk_enqcnt_inc(struct netdev_queue *txq)
+{
+	int enqcnt;
+
+	/* XXX: Once I'm done debugging, This should just be an atomic_inc and
+	 * not an atomic_inc_return. */
+	//atomic_inc(&txq->tx_sk_enqcnt);
+	enqcnt = atomic_inc_return(&txq->tx_sk_enqcnt);
+
+	/* XXX: DEBUG: trace the queue occupancy. */
+	netdev_sk_enqcnt_trace(txq, enqcnt);
+}
+
+/* TODO: I feel like this function should take in as an argument the socket
+ * that is being removed. */
+static inline void netdev_sk_enqcnt_dec(struct netdev_queue *txq)
+{
+	int enqcnt;
+
+	/* XXX: Once I'm done debugging, This should just be an atomic_dec and
+	 * not an atomic_dec_return. */
+	//atomic_dec(&txq->tx_sk_enqcnt);
+	enqcnt = atomic_dec_return(&txq->tx_sk_enqcnt);
+
+	/* XXX: DEBUG: trace the queue occupancy. */
+	netdev_sk_enqcnt_trace(txq, enqcnt);
+}
+#endif
 
 /*
  * Net namespace inlines
