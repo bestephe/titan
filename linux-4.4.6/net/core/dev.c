@@ -2967,12 +2967,152 @@ int dev_loopback_xmit(struct net *net, struct sock *sk, struct sk_buff *skb)
 }
 EXPORT_SYMBOL(dev_loopback_xmit);
 
+/* TODO: this should be moved into its own file.
+ * lib/dyanmic_queue_assignment.c? */
+static inline int get_xps_dqa_queue_even(struct net_device *dev,
+					 struct sk_buff *skb)
+{
+#if defined(CONFIG_XPS) && defined(CONFIG_DQA)
+	struct xps_dev_maps *dev_maps;
+	struct xps_map *map;
+	struct netdev_queue *txq;
+	int min_enqcnt = INT_MAX;
+	int min_queue = -1;
+	int queue_index;
+	int enqcnt;
+	int map_i;
+
+	rcu_read_lock();
+	dev_maps = rcu_dereference(dev->xps_maps);
+	/* XXX: DEBUG */	
+	//netdev_err(dev, "get_xps_dqa_queue_even: dev_maps: %p\n", dev_maps);
+	if (dev_maps) {
+		map = rcu_dereference(
+		    dev_maps->cpu_map[skb->sender_cpu - 1]);
+		if (map) {
+			if (map->len == 1)
+				min_queue = map->queues[0];
+			else {
+				/* XXX: DEBUG */	
+				//netdev_err(dev, "get_xps_dqa_queue_even:\n");
+
+				for (map_i = 0; map_i < map->len; map_i++) {
+					/* TODO: add in prefetching of the txq's */
+
+					queue_index = map->queues[map_i];
+					txq = netdev_get_tx_queue(dev,
+						queue_index);
+					enqcnt = atomic_read(&txq->tx_sk_enqcnt);
+
+					/* XXX: DEBUG */
+					//netdev_err(dev, " mqi: %d, menq: %d, qi: %d, enqcnt: %d\n",
+					//	   min_queue, min_enqcnt, queue_index, enqcnt);
+
+					if (enqcnt < min_enqcnt) {
+						min_queue = queue_index;
+						min_enqcnt = enqcnt;
+					}
+
+					if (enqcnt == 0)
+						break;
+				}
+			}
+
+			if (unlikely(min_queue >= dev->real_num_tx_queues))
+				min_queue = -1;
+		}
+	}
+	rcu_read_unlock();
+
+	return min_queue;
+#else
+	return -1;
+#endif
+}
+
+/* TODO: this should be moved into its own file.
+ * lib/dyanmic_queue_assignment.c? */
+static inline int get_xps_dqa_queue_overflowq(struct net_device *dev,
+					      struct sk_buff *skb)
+{
+#if defined(CONFIG_XPS) && defined(CONFIG_DQA)
+	struct xps_dev_maps *dev_maps;
+	struct xps_map *map;
+	struct netdev_queue *txq;
+	int queue_index = -1;
+	int enqcnt;
+	int map_i;
+
+	rcu_read_lock();
+	dev_maps = rcu_dereference(dev->xps_maps);
+	/* XXX: DEBUG */	
+	//netdev_err(dev, "get_xps_dqa_queue_overflowq: dev_maps: %p\n", dev_maps);
+	if (dev_maps) {
+		map = rcu_dereference(
+		    dev_maps->cpu_map[skb->sender_cpu - 1]);
+		if (map) {
+			if (map->len == 1)
+				queue_index = map->queues[0];
+			else {
+				/* XXX: DEBUG */	
+				//netdev_err(dev, "get_xps_dqa_queue_overflowq:\n");
+
+				for (map_i = 0; map_i < map->len; map_i++) {
+					/* TODO: add in prefetching of the txq's */
+
+					queue_index = map->queues[map_i];
+					txq = netdev_get_tx_queue(dev,
+						queue_index);
+					enqcnt = atomic_read(&txq->tx_sk_enqcnt);
+
+					/* XXX: DEBUG */
+					//netdev_err(dev, " qi: %d, enqcnt: %d\n",
+					//	   queue_index, enqcnt);
+
+					if (enqcnt == 0)
+						break;
+				}
+
+				if (map_i == map->len)
+					queue_index = map->queues[map->len - 1];
+
+				
+			}
+
+			if (unlikely(queue_index >= dev->real_num_tx_queues))
+				queue_index = -1;
+		}
+	}
+	rcu_read_unlock();
+
+	return queue_index;
+#else
+	return -1;
+#endif
+}
+
 static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 {
 #ifdef CONFIG_XPS
 	struct xps_dev_maps *dev_maps;
 	struct xps_map *map;
 	int queue_index = -1;
+
+#ifdef CONFIG_DQA
+	/* BS: this code feels ugly. Is there a cleaner way to change between
+	 * all of the queue assignment algorithms? */
+	if (dev->dqa_alg == DQA_ALG_EVEN) {
+		queue_index = get_xps_dqa_queue_even(dev, skb);
+	} else if (dev->dqa_alg == DQA_ALG_OVERFLOWQ) {
+		queue_index = get_xps_dqa_queue_overflowq(dev, skb);
+	}
+
+	if (queue_index >= 0)
+		return queue_index;
+
+	if (dev->dqa_alg != DQA_ALG_HASH)
+		netdev_warn (dev, "Using DQA_HASH even though that is not the current DQA algorithm!\n");
+#endif
 
 	rcu_read_lock();
 	dev_maps = rcu_dereference(dev->xps_maps);
@@ -2997,6 +3137,82 @@ static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 #endif
 }
 
+/* TODO: this should be moved into its own file.
+ * lib/dyanmic_queue_assignment.c? */
+static inline int get_dqa_queue_even(struct net_device *dev, struct sk_buff *skb)
+{
+#ifdef CONFIG_DQA
+	struct netdev_queue *txq;
+	int min_enqcnt = INT_MAX;
+	int min_queue = -1;
+	int queue_index;
+	int enqcnt;
+
+	/* XXX: DEBUG */	
+	//netdev_err(dev, "get_dqa_queue_even:\n");
+
+	for (queue_index = 0; queue_index < dev->real_num_tx_queues;
+	     queue_index++) {
+		/* TODO: add in prefetching of the txq's */
+
+		txq = netdev_get_tx_queue(dev, queue_index);
+		enqcnt = atomic_read(&txq->tx_sk_enqcnt);
+
+		/* XXX: DEBUG */
+		//netdev_err(dev, " mqi: %d, menq: %d, qi: %d, enqcnt: %d\n",
+		//	   min_queue, min_enqcnt, queue_index, enqcnt);
+
+		if (enqcnt == 0) {
+			return queue_index;
+		} else if (enqcnt < min_enqcnt) {
+			min_queue = queue_index;
+			min_enqcnt = enqcnt;
+		}
+	}
+
+	return min_queue;
+#else
+	return -1;
+#endif
+}
+
+/* TODO: this should be moved into its own file.
+ * lib/dyanmic_queue_assignment.c? */
+static inline int get_dqa_queue_overflowq(struct net_device *dev,
+					  struct sk_buff *skb)
+{
+#ifdef CONFIG_DQA
+	struct netdev_queue *txq;
+	int queue_index;
+	int enqcnt;
+
+	/* XXX: TODO: This algorithm would be much faster if we tracked the
+	 * empty queues (or number of empty queues) somewhere*/
+
+	/* XXX: DEBUG */	
+	//netdev_err(dev, "get_dqa_queue_overflowq:\n");
+
+	for (queue_index = 0; queue_index < dev->real_num_tx_queues;
+	     queue_index++) {
+		/* TODO: add in prefetching of the txq's */
+
+		txq = netdev_get_tx_queue(dev, queue_index);
+		enqcnt = atomic_read(&txq->tx_sk_enqcnt);
+
+		/* XXX: DEBUG */
+		//netdev_err(dev, " qi: %d, enqcnt: %d\n", queue_index, enqcnt);
+
+		if (enqcnt == 0)
+			return queue_index;
+	}
+
+	/* The last queue is the overflow queue if there are no empty queues. */
+	return dev->real_num_tx_queues - 1;
+#else
+	return -1;
+#endif
+}
+
 static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 {
 	struct sock *sk = skb->sk;
@@ -3009,6 +3225,15 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 	if (queue_index < 0 || skb->ooo_okay ||
 	    queue_index >= dev->real_num_tx_queues) {
 		int new_index = get_xps_queue(dev, skb);
+#ifdef CONFIG_DQA
+		if (new_index < 0 && dev->dqa_alg == DQA_ALG_EVEN)
+			new_index = get_dqa_queue_even(dev, skb);
+		else if (new_index < 0 && dev->dqa_alg == DQA_ALG_OVERFLOWQ)
+			new_index = get_dqa_queue_overflowq(dev, skb);
+
+		if (new_index < 0 && dev->dqa_alg != DQA_ALG_HASH)
+			netdev_warn (dev, "Using DQA_HASH even though that is not the current DQA algorithm!\n");
+#endif
 		if (new_index < 0)
 			new_index = skb_tx_hash(dev, skb);
 
@@ -3018,6 +3243,8 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 		    rcu_access_pointer(sk->sk_dst_cache)) {
 
 #ifdef CONFIG_DQA
+			/* TODO: This DQA specific code should be in its own
+			 * function. */
 			struct netdev_queue *txq;
 
 			/* Update the count for the old queue if the old

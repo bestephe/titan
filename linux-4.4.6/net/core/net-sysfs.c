@@ -281,6 +281,60 @@ static ssize_t operstate_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(operstate);
 
+#ifdef CONFIG_DQA
+static const char *const dqa_algs[] = {
+	"hash",
+	"even",
+	"overflowq",
+};
+
+static ssize_t dqa_alg_store(struct device *dev, struct device_attribute *attr,
+			     const char *buf, size_t len)
+{
+	struct net_device *netdev = to_net_dev(dev);
+	unsigned char dqa_alg;
+
+	for (dqa_alg = 0; dqa_alg < ARRAY_SIZE(dqa_algs); dqa_alg++) {
+		/* XXX: this requires the trailing newline to be omitted. */
+		if (len == strlen(dqa_algs[dqa_alg]) &&
+		    strncmp(buf, dqa_algs[dqa_alg],
+			    strlen(dqa_algs[dqa_alg])) == 0)
+			break;
+	}
+
+	if (dqa_alg >= ARRAY_SIZE(dqa_algs))
+		return -EINVAL;
+
+	if (!rtnl_trylock())
+		return restart_syscall();
+	netdev->dqa_alg = dqa_alg;
+	rtnl_unlock();
+
+	/* XXX: DEBUG */
+	printk (KERN_ERR "dqa_alg_store: Set alg to %d (%s)\n", dqa_alg,
+		dqa_algs[dqa_alg]);
+
+	return len;
+}
+
+static ssize_t dqa_alg_show(struct device *dev,
+			    struct device_attribute *attr, char *buf)
+{
+	const struct net_device *netdev = to_net_dev(dev);
+	unsigned char dqa_alg;
+
+	read_lock(&dev_base_lock);
+	dqa_alg = netdev->dqa_alg;
+	read_unlock(&dev_base_lock);
+
+	if (dqa_alg >= ARRAY_SIZE(dqa_algs))
+		return -EINVAL; /* should not happen */
+
+	return sprintf(buf, "%s\n", dqa_algs[dqa_alg]);
+}
+static DEVICE_ATTR_RW(dqa_alg);
+#endif /* CONFIG_DQA */
+
 static ssize_t carrier_changes_show(struct device *dev,
 				    struct device_attribute *attr,
 				    char *buf)
@@ -503,6 +557,9 @@ static struct attribute *net_class_attrs[] = {
 	&dev_attr_duplex.attr,
 	&dev_attr_dormant.attr,
 	&dev_attr_operstate.attr,
+#ifdef CONFIG_DQA
+	&dev_attr_dqa_alg.attr,
+#endif
 	&dev_attr_carrier_changes.attr,
 	&dev_attr_ifalias.attr,
 	&dev_attr_carrier.attr,

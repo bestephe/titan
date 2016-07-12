@@ -1343,6 +1343,27 @@ enum netdev_priv_flags {
 #define IFF_OPENVSWITCH			IFF_OPENVSWITCH
 #define IFF_L3MDEV_SLAVE		IFF_L3MDEV_SLAVE
 
+#ifdef CONFIG_DQA
+/**
+ * enum net_device_dqa_algs - &struct net_device dqa_alg
+ *
+ * @DQA_ALG_HASH: Default hashing algorithm
+ * @DQA_ALG_EVEN: Try to evenly distribute flows across queues
+ * @DQA_ALG_*: Description
+ */
+enum netdev_dqa_algs {
+	DQA_ALG_HASH,
+	DQA_ALG_EVEN,
+	DQA_ALG_OVERFLOWQ,
+};
+
+#define DQA_ALG_HASH			DQA_ALG_HASH
+#define DQA_ALG_EVEN			DQA_ALG_EVEN
+#define DQA_ALG_OVERFLOWQ		DQA_ALG_OVERFLOWQ
+
+#endif /* CONFIG_DQA */
+
+
 /**
  *	struct net_device - The DEVICE structure.
  *		Actually, this whole structure is a big mistake.  It mixes I/O
@@ -1632,6 +1653,10 @@ struct net_device {
 
 	unsigned char		operstate;
 	unsigned char		link_mode;
+
+#ifdef CONFIG_DQA
+	unsigned char		dqa_alg;
+#endif
 
 	unsigned char		if_port;
 	unsigned char		dma;
