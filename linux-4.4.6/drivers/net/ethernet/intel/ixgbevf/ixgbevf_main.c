@@ -96,6 +96,11 @@ static int debug = -1;
 module_param(debug, int, 0);
 MODULE_PARM_DESC(debug, "Debug level (0=none,...,16=all)");
 
+int kern_gso_size = 0;
+module_param(kern_gso_size, uint, 0);
+MODULE_PARM_DESC(kern_gso_size,
+                 "Change the gso size used by the kernel to send this driver SKBs.  Specifically, this causes the following function to be called: netif_set_gso_max_size(netdev, kern_gso_size);");
+
 static void ixgbevf_service_event_schedule(struct ixgbevf_adapter *adapter)
 {
 	if (!test_bit(__IXGBEVF_DOWN, &adapter->state) &&
@@ -4096,6 +4101,12 @@ static int ixgbevf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		dev_info(&pdev->dev, "Intel(R) 82599 Virtual Function\n");
 		break;
 	}
+
+        /* Change the kernel gso size, if requested. */
+        if (kern_gso_size > 0) {
+            pr_err("Setting the kernel gso size to: %d\n", kern_gso_size);
+            netif_set_gso_max_size(netdev, kern_gso_size);
+        }
 
 	return 0;
 

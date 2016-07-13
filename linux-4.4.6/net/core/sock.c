@@ -1449,6 +1449,15 @@ struct sock *sk_alloc(struct net *net, int family, gfp_t priority,
 		sock_net_set(sk, net);
 		atomic_set(&sk->sk_wmem_alloc, 1);
 
+#ifdef CONFIG_DQA
+		/* XXX: DEBUG: sk_prot_alloc sets these fields, so this
+		 * assertion is a bit dumb. */
+		BUG_ON(atomic_read(&sk->sk_tx_enqcnt) != 0);
+		/* XXX: This doesn't hold!? Is sk_tx_queue_clear called
+		 * somewhere above? */
+		//BUG_ON(atomic_read(&sk->sk_tx_queue_mapping_ver) != 0);
+#endif
+
 		sock_update_classid(sk);
 		sock_update_netprioidx(sk);
 	}
@@ -1466,7 +1475,7 @@ void sk_destruct(struct sock *sk)
 	 * reference to the device, so we cannot dequeue the sk from the txq!
 	 * Instead, we should assert the socket is not enqueued. */
 	if (atomic_read(&sk->sk_tx_enqcnt) > 0) {
-		printk (KERN_ERR "WARN! sk_destruct: sk: %p, tx_sk_enqcnt: %d\n",
+		printk (KERN_ERR "ERROR! sk_destruct: sk: %p, tx_sk_enqcnt: %d\n",
 			sk, atomic_read(&sk->sk_tx_enqcnt));
 		BUG();
 	}
@@ -1512,8 +1521,16 @@ void sk_free(struct sock *sk)
 	 * some packets are still in some tx queue.
 	 * If not null, sock_wfree() will call __sk_free(sk) later
 	 */
-	if (atomic_dec_and_test(&sk->sk_wmem_alloc))
+	if (atomic_dec_and_test(&sk->sk_wmem_alloc)) {
+#ifdef CONFIG_DQA
+		if (atomic_read(&sk->sk_tx_enqcnt) != 0) {
+			printk (KERN_ERR "ERROR! sk_free: sk: %p, tx_sk_enqcnt: %d\n",
+				sk, atomic_read(&sk->sk_tx_enqcnt));
+			BUG();
+		}
+#endif
 		__sk_free(sk);
+	}
 }
 EXPORT_SYMBOL(sk_free);
 
@@ -1679,8 +1696,17 @@ void sock_wfree(struct sk_buff *skb)
 	 * if sk_wmem_alloc reaches 0, we must finish what sk_free()
 	 * could not do because of in-flight packets
 	 */
-	if (atomic_sub_and_test(len, &sk->sk_wmem_alloc))
+	if (atomic_sub_and_test(len, &sk->sk_wmem_alloc)) {
+#ifdef CONFIG_DQA
+		if (atomic_read(&sk->sk_tx_enqcnt) > 0) {
+			printk (KERN_ERR "ERROR! sock_wfree: sk: %p, tx_sk_enqcnt: %d\n",
+				sk, atomic_read(&sk->sk_tx_enqcnt));
+			BUG();
+		}
+#endif
+
 		__sk_free(sk);
+	}
 }
 EXPORT_SYMBOL(sock_wfree);
 
@@ -1725,6 +1751,10 @@ void skb_orphan_partial(struct sk_buff *skb)
 		) {
 		atomic_sub(skb->truesize - 1, &skb->sk->sk_wmem_alloc);
 		skb->truesize = 1;
+
+#ifdef CONFIG_DQA
+		skb_dequeue_from_sk(skb);
+#endif
 	} else {
 		skb_orphan(skb);
 	}

@@ -711,6 +711,12 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 		//XXX: Is this causing deadlock?
 		//unlock_sock_fast(skb->sk, slow);
 	}
+
+	//BUG_ON(skb->enq_cnt != 0);
+	if (skb->enq_cnt != 0) {
+		printk (KERN_ERR "Warning! skb_dequeue_from_sk. Still enq_cnt!: sk: %p, tx_sk_enqcnt: %d\n",
+			skb->sk, skb->sk ? atomic_read(&skb->sk->sk_tx_enqcnt) : 0);
+	}
 #endif
 }
 
@@ -3155,6 +3161,15 @@ struct sk_buff *skb_segment(struct sk_buff *head_skb,
 			nskb = skb_clone(list_skb, GFP_ATOMIC);
 			list_skb = list_skb->next;
 
+#ifdef CONFIG_DQA
+			/* NOTE: __copy_skb_header(...) explicitly says that it
+			 * does not copy old->sk.  However, this makes me
+			 * concerned about queues being updated too early when
+			 * old is freed before the data is sent. Ahh.
+			 * Nevermind. In tcp_gso_segment(...), the sk will be
+			 * copied if the destructor is also copied. */
+#endif
+
 			if (unlikely(!nskb))
 				goto err;
 
@@ -3322,10 +3337,13 @@ perform_csum_check:
 		queue_mapping_ver = atomic_read(&sk->sk_tx_queue_mapping_ver);
 		if (queue_mapping_ver == head_skb->queue_mapping_ver) {
 			do {
+				/* Not copied as part of skb_clone, but needed
+				 * if we're enqueuing it. */
+				tskb->sk = sk; 
 				sk_tx_enq(sk, tskb);
 				BUG_ON (queue_mapping_ver != tskb->queue_mapping_ver);
 				tskb = tskb->next;
-			} while (tskb->next);
+			} while (tskb);
 		}
 
 		/* Check version for potentially removing locking later. */

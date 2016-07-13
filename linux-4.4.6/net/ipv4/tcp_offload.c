@@ -140,10 +140,14 @@ struct sk_buff *tcp_gso_segment(struct sk_buff *skb,
 
 		seq += mss;
 		if (copy_destructor) {
+#ifdef CONFIG_DQA
+			BUG_ON(skb->sk != gso_skb->sk);
+#endif
 			skb->destructor = gso_skb->destructor;
 			skb->sk = gso_skb->sk;
 			sum_truesize += skb->truesize;
 		}
+
 		skb = skb->next;
 		th = tcp_hdr(skb);
 
@@ -157,7 +161,16 @@ struct sk_buff *tcp_gso_segment(struct sk_buff *skb,
 	 * is freed by GSO engine
 	 */
 	if (copy_destructor) {
+		/* Copy do not swap. Swapping the destructor should be good
+		 * enough for making sure wmem is not updated. */
+		/* XXX: However, skb_segment currently sets skb->sk, so
+		 * swapping should be fine. */
+#ifdef CONFIG_DQA
+		BUG_ON(gso_skb->sk != skb->sk);
+#endif
 		swap(gso_skb->sk, skb->sk);
+		//skb->sk = gso_skb->sk;
+
 		swap(gso_skb->destructor, skb->destructor);
 		sum_truesize += skb->truesize;
 		atomic_add(sum_truesize - gso_skb->truesize,
@@ -168,7 +181,7 @@ struct sk_buff *tcp_gso_segment(struct sk_buff *skb,
 	/* TODO: TCP Small Queues needs some special code here to play nice.
 	 * Will DQA? */
 	/* XXX: Currently, I think having changed skb_segment is enough to
-	 * support DQA */
+	 * support DQA, but I'm not sure that is the best location. */
 #endif
 
 	delta = htonl(oldlen + (skb_tail_pointer(skb) -
