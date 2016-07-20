@@ -1039,6 +1039,7 @@ struct ixgbe_adapter {
 	bool cloud_mode;
 
         /* Variables for changing driver config to make experiments easier */
+        bool wrr;
         bool xmit_batch;
         bool use_sgseg;
         bool use_pkt_ring;

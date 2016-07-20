@@ -2737,6 +2737,10 @@ static int ixgbe_request_msix_irqs(struct ixgbe_adapter *adapter)
 	int vector, err;
 	int ri = 0, ti = 0;
 
+        pr_err ("ixgbe_request_msix_irqs:\n");
+        pr_err (" adapter->num_q_vectors: %d\n",
+                adapter->num_q_vectors);
+
 	for (vector = 0; vector < adapter->num_q_vectors; vector++) {
 		struct ixgbe_q_vector *q_vector = adapter->q_vector[vector];
 		struct msix_entry *entry = &adapter->msix_entries[vector];
@@ -2745,6 +2749,16 @@ static int ixgbe_request_msix_irqs(struct ixgbe_adapter *adapter)
 			snprintf(q_vector->name, sizeof(q_vector->name) - 1,
 				 "%s-%s-%d", netdev->name, "TxRx", ri++);
 			ti++;
+
+                        /* XXX: DEBUG */
+                        struct ixgbe_ring *ring;
+                        pr_err (" q_vector: %s\n", q_vector->name);
+                        ixgbe_for_each_ring(ring, q_vector->rx) {
+                            pr_err("  rxq-%d\n", ring->queue_index);
+                        }
+                        ixgbe_for_each_ring(ring, q_vector->tx) {
+                            pr_err("  txq-%d\n", ring->queue_index);
+                        }
 		} else if (q_vector->rx.ring) {
 			snprintf(q_vector->name, sizeof(q_vector->name) - 1,
 				 "%s-%s-%d", netdev->name, "rx", ri++);
@@ -3077,6 +3091,56 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
 		e_err(drv, "Could not enable Tx Queue %d\n", reg_idx);
 }
 
+#define IXGBE_CRQ_MASK  (0x3FFF)
+static int ixgbe_get_txq_credits(struct ixgbe_hw *hw, int txq_i)
+{
+        u32 reg;
+        u32 crq;
+
+        IXGBE_WRITE_REG(hw, IXGBE_RTTDQSEL, txq_i);
+        reg = IXGBE_READ_REG(hw, IXGBE_RTTDT1C);
+        crq = reg & IXGBE_CRQ_MASK;
+
+        pr_err ("txq-%d: credit refill quantum (CRQ): %u\n",
+                txq_i, crq);
+
+        pr_err (" DT1S: %u\n", IXGBE_READ_REG(hw, IXGBE_RTTDT1S));
+
+        return crq;
+}
+
+static void ixgbe_set_txq_credits(struct ixgbe_hw *hw, int txq_i, u16 refill)
+{
+        IXGBE_WRITE_REG(hw, IXGBE_RTTDQSEL, txq_i);
+	IXGBE_WRITE_REG(hw, IXGBE_RTTDT1C, refill);
+
+	/* XXX: DEBUG */
+	ixgbe_get_txq_credits(hw, txq_i);
+}
+
+static void ixgbe_setup_mtqc_wrr(struct ixgbe_adapter *adapter)
+{
+	int i;
+	//u32 reg;
+
+        /* XXX: DEBUG */
+        pr_err ("ixgbe_setup_mtqc_wrr:\n");
+
+	/* TODO: test with weights later. */
+	for (i = 0; i < adapter->num_tx_queues; i++) {
+		//ixgbe_set_txq_credits(&adapter->hw, i,
+		//    IXGBE_DCB_MAX_CREDIT_REFILL);
+		//if (i == 0 || i == 1 || i == 2 || i == 3) {
+		if (i == 0) {
+			ixgbe_set_txq_credits(&adapter->hw, i,
+			    IXGBE_DCB_MAX_CREDIT_REFILL * 4);
+		} else {
+			ixgbe_set_txq_credits(&adapter->hw, i, 25);
+			//ixgbe_set_txq_credits(&adapter->hw, i, 5);
+		}
+	}
+}
+
 static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
 {
 	struct ixgbe_hw *hw = &adapter->hw;
@@ -3111,6 +3175,39 @@ static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
 			mtqc = IXGBE_MTQC_64Q_1PB;
 	}
 
+        /* (Try to) enable WRR */
+        /* The output of VMDq=8,8 is:
+         * [ 1348.251714] ixgbe_setup_mtqc:
+         * [ 1348.255021]  RTTDCS: 0xc00042
+         * [ 1348.258329]  vmpac: 2
+         * [ 1348.260862]  tcs: 0
+         * [ 1348.263198]  mtqc: a
+         */
+        if (adapter->wrr) {
+
+            /* Testing this out.  The datasheet says: This bit should be set
+             * the same as MTQC.VT_Ena. */
+#if 0
+            u32 vmdctl;
+            vmdctl = IXGBE_READ_REG(hw, IXGBE_VT_CTL);
+            vmdctl |= IXGBE_VT_CTL_VT_ENABLE;
+            vmdctl &= ~IXGBE_VT_CTL_POOL_MASK;
+            vmdctl |= VMDQ_P(0) << IXGBE_VT_CTL_POOL_SHIFT;
+            vmdctl |= IXGBE_VT_CTL_REPLEN;
+            IXGBE_WRITE_REG(hw, IXGBE_VT_CTL, vmdctl);
+#endif
+
+            rttdcs |= (IXGBE_RTTDCS_VMPAC);
+	    //rttdcs &= ~(IXGBE_RTTDCS_BDPM | IXGBE_RTTDCS_BPBFSM);
+	    //rttdcs &= ~(IXGBE_RTTDCS_BPBFSM);
+
+            ixgbe_setup_mtqc_wrr(adapter);
+
+	    //mtqc |= IXGBE_MTQC_VT_ENA;
+	    //mtqc |= (IXGBE_MTQC_VT_ENA | IXGBE_MTQC_64VF);
+	    //mtqc |= (IXGBE_MTQC_VT_ENA | IXGBE_MTQC_32VF);
+        }
+
 	IXGBE_WRITE_REG(hw, IXGBE_MTQC, mtqc);
 
 	/* Enable Security TX Buffer IFG for multiple pb */
@@ -3119,6 +3216,13 @@ static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
 		sectx |= IXGBE_SECTX_DCB;
 		IXGBE_WRITE_REG(hw, IXGBE_SECTXMINIFG, sectx);
 	}
+
+        /* DEBUG */
+        pr_info("ixgbe_setup_mtqc:\n");
+        pr_info(" RTTDCS: 0x%x\n", rttdcs);
+        pr_info(" vmpac: %d\n", rttdcs & IXGBE_RTTDCS_VMPAC);
+        pr_info(" tcs: %d\n", tcs);
+        pr_info(" mtqc: %x\n", mtqc);
 
 	/* re-enable the arbiter */
 	rttdcs &= ~IXGBE_RTTDCS_ARBDIS;
@@ -3222,8 +3326,11 @@ static void ixgbe_configure_srrctl(struct ixgbe_adapter *adapter,
 		u16 mask = adapter->ring_feature[RING_F_RSS].mask;
 
 		/* program one srrctl register per VMDq index */
+                pr_err("ixgbe_configure_srrctl: skipping VMDQ config...\n");
+#if 0
 		if (adapter->flags & IXGBE_FLAG_VMDQ_ENABLED)
 			mask = adapter->ring_feature[RING_F_VMDQ].mask;
+#endif
 
 		/*
 		 * if VMDq is not active we must program one srrctl register
@@ -3402,6 +3509,9 @@ static void ixgbe_setup_mrqc(struct ixgbe_adapter *adapter)
 	} else {
 		u8 tcs = netdev_get_num_tc(adapter->netdev);
 
+                //XXX: DEBUG
+                //pr_err("ixgbe_setup_mrqc: Refusing to setup RX VMDQ!\n");
+		//if (0) {
 		if (adapter->flags & IXGBE_FLAG_VMDQ_ENABLED) {
 			if (tcs > 4)
 				mrqc = IXGBE_MRQC_VMDQRT8TCEN;	/* 8 TCs */
@@ -3647,6 +3757,9 @@ static void ixgbe_setup_psrtype(struct ixgbe_adapter *adapter)
 	else if (rss_i > 1)
 		psrtype |= 1 << 29;
 
+        pr_err ("ixgbe_setup_psrtype: adapter->num_rx_pools: %d\n",
+                adapter->num_rx_pools);
+
 	for (p = 0; p < adapter->num_rx_pools; p++)
 		IXGBE_WRITE_REG(hw, IXGBE_PSRTYPE(VMDQ_P(p)), psrtype);
 }
@@ -3720,6 +3833,10 @@ static void ixgbe_configure_virtualization(struct ixgbe_adapter *adapter)
 	if (!(adapter->flags & IXGBE_FLAG_VMDQ_ENABLED))
 		return;
 
+        //XXX: DEBUG
+        //pr_err ("ixgbe_configure_virtualization: skipping VMDQ config!\n");
+        //return;
+
 	switch (hw->mac.type) {
 	case ixgbe_mac_82598EB:
 		vmdctl = IXGBE_READ_REG(hw, IXGBE_VMD_CTL);
@@ -3750,14 +3867,28 @@ static void ixgbe_configure_virtualization(struct ixgbe_adapter *adapter)
 			IXGBE_WRITE_REG(hw, IXGBE_VMOLR(pool), vmolr);
 		}
 
+                //XXX: DEBUG
 		vf_shift = VMDQ_P(0) % 32;
 		reg_offset = (VMDQ_P(0) >= 32) ? 1 : 0;
 
 		/* Enable only the PF pools for Tx/Rx */
+                //XXX: DEBUG
 		IXGBE_WRITE_REG(hw, IXGBE_VFRE(reg_offset), (~0) << vf_shift);
 		IXGBE_WRITE_REG(hw, IXGBE_VFRE(reg_offset ^ 1), reg_offset - 1);
 		IXGBE_WRITE_REG(hw, IXGBE_VFTE(reg_offset), (~0) << vf_shift);
 		IXGBE_WRITE_REG(hw, IXGBE_VFTE(reg_offset ^ 1), reg_offset - 1);
+
+                /* XXX: DEBUG: Enable all of the pools at once. */
+#if 0
+                for (i = 0; i < adapter->num_rx_pools; i++) {
+                        vf_shift = VMDQ_P(i) % 32;
+                        reg_offset = (VMDQ_P(i) >= 32) ? 1 : 0;
+                        IXGBE_WRITE_REG(hw, IXGBE_VFRE(reg_offset), (~0) << vf_shift);
+                        IXGBE_WRITE_REG(hw, IXGBE_VFRE(reg_offset ^ 1), reg_offset - 1);
+                        IXGBE_WRITE_REG(hw, IXGBE_VFTE(reg_offset), (~0) << vf_shift);
+                        IXGBE_WRITE_REG(hw, IXGBE_VFTE(reg_offset ^ 1), reg_offset - 1);
+                }
+#endif
 
 		/* clear VLAN promisc flag so VFTA
 		 * will be updated if necessary
@@ -4956,6 +5087,9 @@ static void ixgbe_configure_dcb(struct ixgbe_adapter *adapter)
 		return;
 	}
 
+        pr_err ("Configuring DCB... I don't want this to be happening.\n");
+        pr_err (" This will configure traffic classes and set queue weights!\n");
+
 	if (hw->mac.type == ixgbe_mac_82598EB) {
 #ifdef NETDEV_CAN_SET_GSO_MAX_SIZE
 		netif_set_gso_max_size(netdev, 32768);
@@ -5012,6 +5146,12 @@ static void ixgbe_configure_dcb(struct ixgbe_adapter *adapter)
 		/* write msb to all 8 TCs in one write */
 		IXGBE_WRITE_REG(hw, IXGBE_RQTC, msb * 0x11111111);
 	}
+
+        /* XXX: DEBUG */
+        int i;
+        for (i = 0; i < adapter->num_tx_queues; i++) {
+                ixgbe_get_txq_credits(hw, i);
+        }
 }
 
 #ifndef IXGBE_NO_LLI
@@ -6330,12 +6470,20 @@ static int ixgbe_setup_all_tx_resources(struct ixgbe_adapter *adapter)
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 
 		err = ixgbe_setup_tx_resources(adapter->tx_ring[i]);
+
+                /* Debug the per-Tx queue (pool?) credits. */
+                e_err(probe, "Setting up Tx Queue %u...\n", i);
+                ixgbe_get_txq_credits(&adapter->hw, i);
+
 		if (!err)
 			continue;
 
 		e_err(probe, "Allocation for Tx Queue %u failed\n", i);
 		goto err_setup_tx;
 	}
+
+        /* Check the configuration of the Tx descriptor plane */
+        //IXGBE_RTTDCS.VMPAC allows for WRR queue arbitration
 
 	return 0;
 err_setup_tx:
@@ -6598,6 +6746,7 @@ static int ixgbe_open(struct net_device *netdev)
 		goto err_req_irq;
 
 	/* Notify the stack of the actual queue counts. */
+#if 0
 	err = netif_set_real_num_tx_queues(netdev,
 					   adapter->num_rx_pools > 1 ? 1 :
 					   adapter->num_tx_queues);
@@ -6609,6 +6758,27 @@ static int ixgbe_open(struct net_device *netdev)
 					   adapter->num_rx_queues);
 	if (err)
 		goto err_set_queues;
+#endif 
+
+        /* XXX: DEBUG: what happens if we expose all of the queues to the OS? */
+	err = netif_set_real_num_tx_queues(netdev, adapter->num_tx_queues);
+	if (err)
+		goto err_set_queues;
+
+	err = netif_set_real_num_rx_queues(netdev, adapter->num_rx_queues);
+	if (err)
+		goto err_set_queues;
+
+        pr_err("ixgbe_open:\n");
+        pr_err(" num_rx_pools: %d\n", adapter->num_rx_pools);
+        pr_err(" num_rx_queues_per_pool: %d\n", adapter->num_rx_queues_per_pool);
+        pr_err(" num_rx_queues: %d\n", adapter->num_rx_queues);
+        /* XXX: don't exist */
+        //pr_err(" num_tx_pools: %d\n", adapter->num_tx_pools);
+        //pr_err(" num_rx_queues_per_pool: %d\n", adapter->num_rx_queues_per_pool);
+        pr_err(" num_tx_queues: %d\n", adapter->num_tx_queues);
+        pr_err(" num_vfs: %d\n", adapter->num_vfs);
+        pr_err(" num_q_vectors: %d\n", adapter->num_q_vectors);
 
 #ifdef HAVE_PTP_1588_CLOCK
 	ixgbe_ptp_init(adapter);
@@ -6625,7 +6795,7 @@ static int ixgbe_open(struct net_device *netdev)
         /* Create a simple /proc file for exporting batch data to userspace.
          * This would probably be better implemented as part of ethtool, but
          * this seemed way easier for now. */
-        proc_create_data("ixgbe_batch_stats", 0, NULL, &ixgbe_batch_stats_proc_fops, netdev);
+        //proc_create_data("ixgbe_batch_stats", 0, NULL, &ixgbe_batch_stats_proc_fops, netdev);
 
 	return IXGBE_SUCCESS;
 
@@ -6669,7 +6839,7 @@ static void ixgbe_close_suspend(struct ixgbe_adapter *adapter)
         //XXX: DEBUG
         /* Remove a simple /proc file for exporting batch data to userspace.
          * */
-        remove_proc_entry("ixgbe_batch_stats", NULL);
+        //remove_proc_entry("ixgbe_batch_stats", NULL);
 
 	ixgbe_free_all_rx_resources(adapter);
 	ixgbe_free_all_tx_resources(adapter);

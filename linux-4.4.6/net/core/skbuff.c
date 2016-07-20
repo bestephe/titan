@@ -719,6 +719,7 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 	}
 #endif
 }
+EXPORT_SYMBOL(skb_dequeue_from_sk);
 
 static void skb_release_head_state(struct sk_buff *skb)
 {

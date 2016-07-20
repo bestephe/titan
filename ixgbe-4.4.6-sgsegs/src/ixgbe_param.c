@@ -132,6 +132,8 @@ IXGBE_PARAM(RSS, "Number of Receive-Side Scaling Descriptor Queues, "
 
 IXGBE_PARAM(TSO,"Disable or enable TSO, 0=disabled, 1=enabled");
 
+IXGBE_PARAM(WRR,"Use WRR scheduling between Tx queues. 0=disabled. 1=enabled");
+
 IXGBE_PARAM(XmitBatch, "Use xmit batching, 0=disabled, 1=enabled");
 
 IXGBE_PARAM(UseSgseg, "Use scatter/gather segmentation, 0=disabled, 1=enabled");
@@ -640,13 +642,13 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
                         ixgbe_validate_option(&tso, &opt);
 			if(tso)
 			{
-				printk("Enabling TSO");
+				printk("Enabling TSO\n");
 				netdev->features |= NETIF_F_TSO;
 				//printk("TSO FLAG %u\n",(netdev->features & NETIF_F_TSO));
 			}
 			else
 			{
-				printk("Disabling TSO");
+				printk("Disabling TSO\n");
 				netdev->features &= ~NETIF_F_TSO;
 			}
 
@@ -658,6 +660,44 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
                                netdev->features |= NETIF_F_TSO;
                         else
                             	netdev->features &= ~NETIF_F_TSO;
+                }
+#endif
+        }
+	{ /* WRR Support */
+                static struct ixgbe_option opt = {
+                        .type = enable_option,
+                        .name = "WRR Support",
+                        .err  = "defaulting to Disabled",
+                        .def  = OPTION_DISABLED
+                };
+#ifdef module_param_array
+                if (num_WRR > bd) {
+#endif
+                        unsigned int wrr = WRR[bd];
+			//printk("WRR value :::: %d",tso);
+                        ixgbe_validate_option(&wrr, &opt);
+			if(wrr)
+			{
+				printk("Enabling WRR");
+                                adapter->wrr = true;
+			}
+			else
+			{
+				printk("Disabling WRR");
+				adapter->wrr = false;
+			}
+
+#ifdef module_param_array
+                } else {
+			//printk("Deafault WRR value");
+			//printk("%d",opt.def);
+                        if (opt.def == OPTION_ENABLED) {
+				printk("Enabling WRR");
+                                adapter->wrr = true;
+                        } else {
+				printk("Disabling WRR");
+				adapter->wrr = false;
+                        }
                 }
 #endif
         }

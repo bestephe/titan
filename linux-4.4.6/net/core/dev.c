@@ -3120,6 +3120,12 @@ static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 		map = rcu_dereference(
 		    dev_maps->cpu_map[skb->sender_cpu - 1]);
 		if (map) {
+			//int i;
+			//for (i = 0; i < map->len; i++) {
+			//	netdev_warn (dev, " map->queues[%d]: %d\n",
+			//		     i, map->queues[i]);
+			//}
+
 			if (map->len == 1)
 				queue_index = map->queues[0];
 			else
@@ -3130,6 +3136,10 @@ static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 		}
 	}
 	rcu_read_unlock();
+
+	//netdev_warn (dev, "get_xps_queue:\n");
+	//netdev_warn (dev, " skb->sender_cpu: %d\n", skb->sender_cpu);
+	//netdev_warn (dev, " queue_index: %d\n", queue_index);
 
 	return queue_index;
 #else
@@ -3361,8 +3371,14 @@ struct netdev_queue *netdev_pick_tx(struct net_device *dev,
 #ifdef CONFIG_DQA
 	//XXX: DEBUG
 	if (sk_tx_queue_get(skb->sk) >= 0) {
-		BUG_ON (sk_tx_queue_get(skb->sk) !=
-			skb_get_queue_mapping(skb));
+		//BUG_ON (sk_tx_queue_get(skb->sk) !=
+		//	skb_get_queue_mapping(skb));
+		if (sk_tx_queue_get(skb->sk) !=
+		    skb_get_queue_mapping(skb)) {
+			netdev_err (dev, "netdev_pick_tx: sk_tx_queue (%d) != skb q (%d)!\n",
+				    sk_tx_queue_get(skb->sk),
+				    skb_get_queue_mapping(skb));
+		}
 	}
 #endif
 

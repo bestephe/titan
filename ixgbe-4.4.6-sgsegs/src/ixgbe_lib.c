@@ -553,6 +553,8 @@ static bool ixgbe_set_vmdq_queues(struct ixgbe_adapter *adapter)
 	u16 fcoe_i = 0;
 #endif
 
+        /* XXX: This function may need to change. */
+
 	/* only proceed if VMDq is enabled */
 	if (!(adapter->flags & IXGBE_FLAG_VMDQ_ENABLED))
 		return false;
@@ -684,6 +686,8 @@ static bool ixgbe_set_rss_queues(struct ixgbe_adapter *adapter)
 	struct ixgbe_ring_feature *f;
 	u16 rss_i;
 
+        /* XXX: This function may need to change. */
+
 	/* set mask for 16 queue limit of RSS */
 	f = &adapter->ring_feature[RING_F_RSS];
 	rss_i = f->limit;
@@ -765,6 +769,8 @@ static void ixgbe_set_num_queues(struct ixgbe_adapter *adapter)
 	adapter->num_rx_pools = adapter->num_rx_queues;
 	adapter->num_rx_queues_per_pool = 1;
 
+        /* XXX: This function may need to change. */
+
 #ifdef HAVE_TX_MQ
 	if (ixgbe_set_dcb_vmdq_queues(adapter))
 		return;
@@ -794,6 +800,11 @@ static int ixgbe_acquire_msix_vectors(struct ixgbe_adapter *adapter)
 
 	if (!(adapter->flags & IXGBE_FLAG_MSIX_CAPABLE))
 		return -EOPNOTSUPP;
+
+        pr_err("ixgbe_acquire_msix_vectors:\n");
+        pr_err(" adapter->num_rx_queues: %d\n", adapter->num_rx_queues);
+        pr_err(" adapter->num_tx_queues: %d\n", adapter->num_tx_queues);
+        pr_err(" hw->mac.max_msix_vectors: %d\n", hw->mac.max_msix_vectors);
 
 	/* We start by asking for one vector per queue pair */
 	vectors = max(adapter->num_rx_queues, adapter->num_tx_queues);
@@ -881,6 +892,9 @@ static void ixgbe_add_ring(struct ixgbe_ring *ring,
  *
  * We allocate one q_vector.  If allocation fails we return -ENOMEM.
  **/
+ /* XXX: this currently uses a stride of v_count to allocate rings to
+  * interrupts.  Unfortunately, this makes configuring XPS correctly more
+  * difficult. */
 static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 				unsigned int v_count, unsigned int v_idx,
 				unsigned int txr_count, unsigned int txr_idx,
@@ -1042,6 +1056,15 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 		ring++;
 	}
 
+        /* XXX: DEBUG */
+        pr_err ("ixgbe_alloc_q_vector %d:\n", v_idx);
+        ixgbe_for_each_ring(ring, q_vector->rx) {
+            pr_err(" rxq-%d\n", ring->queue_index);
+        }
+        ixgbe_for_each_ring(ring, q_vector->tx) {
+            pr_err(" txq-%d\n", ring->queue_index);
+        }
+
 	return 0;
 }
 
@@ -1104,6 +1127,10 @@ static int ixgbe_alloc_q_vectors(struct ixgbe_adapter *adapter)
 	for (; v_idx < q_vectors; v_idx++) {
 		int rqpv = DIV_ROUND_UP(rxr_remaining, q_vectors - v_idx);
 		int tqpv = DIV_ROUND_UP(txr_remaining, q_vectors - v_idx);
+                /* XXX: This function interleaves rings by a stride of
+                 * q_vectors for some reason.  Unfortunately, this makes
+                 * assigning queue affinity for XPS more difficult. */
+#if 0
 		err = ixgbe_alloc_q_vector(adapter, q_vectors, v_idx,
 					   tqpv, txr_idx,
 					   rqpv, rxr_idx);
@@ -1116,6 +1143,21 @@ static int ixgbe_alloc_q_vectors(struct ixgbe_adapter *adapter)
 		txr_remaining -= tqpv;
 		rxr_idx++;
 		txr_idx++;
+#endif
+
+                /* XXX: Testing out disabling interleaving. */
+		err = ixgbe_alloc_q_vector(adapter, 1, v_idx,
+					   tqpv, txr_idx,
+					   rqpv, rxr_idx);
+
+		if (err)
+			goto err_out;
+
+		/* update counts and index */
+		rxr_remaining -= rqpv;
+		txr_remaining -= tqpv;
+		rxr_idx += rqpv;
+		txr_idx += tqpv;
 	}
 
 	return IXGBE_SUCCESS;
