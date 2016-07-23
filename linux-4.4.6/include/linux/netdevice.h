@@ -561,6 +561,7 @@ enum netdev_queue_state_t {
 struct netdev_queue_trace {
 	//unsigned long		ts;
 	struct timespec		tv;
+	u64			ts_nsec;
 	int			enqcnt;
 };
 #endif
@@ -606,6 +607,7 @@ struct netdev_queue {
 	/* XXX: DEBUG: */
 	struct netdev_queue_trace tx_sk_trace[DQA_TXQ_TRACE_MAX_ENTRIES];
 	atomic_t		tx_sk_trace_maxi;
+	unsigned long		tx_weight;
 #endif
 	unsigned long		tx_maxrate;
 } ____cacheline_aligned_in_smp;
@@ -1067,6 +1069,12 @@ typedef u16 (*select_queue_fallback_t)(struct net_device *dev,
  *			     int queue_index, u32 maxrate);
  *	Called when a user wants to set a max-rate limitation of specific
  *	TX queue.
+#ifdef CONFIG_DQA
+ * int (*ndo_set_tx_weight)(struct net_device *dev,
+ *			    int queue_index, u32 weight);
+ *	Called dynamically by the kernel when a user wants to set a max-rate limitation of specific
+ *	TX queue.
+#endif
  * int (*ndo_get_iflink)(const struct net_device *dev);
  *	Called to get the iflink value of this device.
  * void (*ndo_change_proto_down)(struct net_device *dev,
@@ -1250,6 +1258,14 @@ struct net_device_ops {
 	int			(*ndo_set_tx_maxrate)(struct net_device *dev,
 						      int queue_index,
 						      u32 maxrate);
+#ifdef CONFIG_DQA
+	/* XXX: This could be its own config and DQA can work (to some extent)
+	 * without tx weights. */
+	/* XXX: Also, this probably doesn't need to be in an #ifdef anyways. */
+	int			(*ndo_set_tx_weight)(struct net_device *dev,
+						     int queue_index,
+						     u32 weight);
+#endif
 	int			(*ndo_get_iflink)(const struct net_device *dev);
 	int			(*ndo_change_proto_down)(struct net_device *dev,
 							 bool proto_down);
@@ -1945,6 +1961,7 @@ static inline void netdev_sk_enqcnt_trace(struct netdev_queue *txq,
 		trace_data = &txq->tx_sk_trace[trace_i];
 		getnstimeofday(&trace_data->tv);
 		trace_data->enqcnt = enqcnt;
+		trace_data->ts_nsec = local_clock();
 
 		/* XXX: DEBUG */
 		//printk (KERN_ERR "netdev_sk_enqcnt_trace i=%d: %d @ %ld\n",
@@ -1969,6 +1986,10 @@ static inline void netdev_sk_enqcnt_inc(struct netdev_queue *txq)
 
 	/* XXX: DEBUG: trace the queue occupancy. */
 	netdev_sk_enqcnt_trace(txq, enqcnt);
+
+	/* XXX: DEBUG: more debugging. the debuggining. */
+	//printk (KERN_ERR "netdev_sk_enqcnt_inc: enqcnt: %d, cpu: %d\n",
+	//	enqcnt, smp_processor_id());
 }
 
 /* TODO: I feel like this function should take in as an argument the socket
@@ -1984,6 +2005,10 @@ static inline void netdev_sk_enqcnt_dec(struct netdev_queue *txq)
 
 	/* XXX: DEBUG: trace the queue occupancy. */
 	netdev_sk_enqcnt_trace(txq, enqcnt);
+
+	/* XXX: DEBUG: more debugging. the debuggining. */
+	//printk (KERN_ERR "netdev_sk_enqcnt_dec: enqcnt: %d, cpu: %d\n",
+	//	enqcnt, smp_processor_id());
 }
 #endif
 

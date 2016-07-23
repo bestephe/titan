@@ -1292,6 +1292,14 @@ static inline void sock_lock_init(struct sock *sk)
 			af_family_slock_keys + sk->sk_family,
 			af_family_key_strings[sk->sk_family],
 			af_family_keys + sk->sk_family);
+
+	
+#ifdef CONFIG_DQA
+	/* BS: This may not be needed and is likely not in the right location,
+	 * but I don't know why locking from within a softirq is causing
+	 * deadlock.. */
+	spin_lock_init(&(sk)->sk_lock.qmap_slock);
+#endif
 }
 
 /*

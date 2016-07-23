@@ -651,7 +651,6 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 	 * that the sock lock should be called differently?  Currently there
 	 * are four options: lock_sock(...), lock_sock_fast(...),
 	 * bh_lock_sock(...), and no locking. */
-
 	/* TODO: I think this the best location for logging the dequeing of the
 	 * skb from its sk */
 	BUG_ON (skb->enq_cnt > 1);
@@ -663,6 +662,11 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 		 * skb is freed! */
 		//XXX: Is this causing deadlock?
 		//slow = lock_sock_fast(skb->sk);
+
+		/* XXX: none of the above options worked, so I make option 5. */
+		unsigned long flags;
+		spin_lock_irqsave(&skb->sk->sk_lock.qmap_slock, flags);
+
 
 		if (skb->queue_mapping_ver ==
 		    atomic_read(&skb->sk->sk_tx_queue_mapping_ver)) {
@@ -710,12 +714,20 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 		/* XXX: maybe release_sock(...)? */
 		//XXX: Is this causing deadlock?
 		//unlock_sock_fast(skb->sk, slow);
+
+		spin_unlock_irqrestore(&skb->sk->sk_lock.qmap_slock, flags);
 	}
 
-	//BUG_ON(skb->enq_cnt != 0);
+	/* XXX: DEBUG */
 	if (skb->enq_cnt != 0) {
-		printk (KERN_ERR "Warning! skb_dequeue_from_sk. Still enq_cnt!: sk: %p, tx_sk_enqcnt: %d\n",
-			skb->sk, skb->sk ? atomic_read(&skb->sk->sk_tx_enqcnt) : 0);
+		BUG_ON (skb->sk && skb->queue_mapping_ver ==
+			    atomic_read(&skb->sk->sk_tx_queue_mapping_ver));
+		printk (KERN_ERR "Warning! skb_dequeue_from_sk. enq_cnt != 0: "
+			"sk: %p, sk->tx_enqcnt: %d, skb->qver: %d, "
+			"sk->qver: %d\n", skb->sk,
+			skb->sk ? atomic_read(&skb->sk->sk_tx_enqcnt) : 0,
+			skb->queue_mapping_ver,
+			skb->sk ? atomic_read(&skb->sk->sk_tx_queue_mapping_ver) : 0);
 	}
 #endif
 }
@@ -3323,6 +3335,7 @@ perform_csum_check:
 		struct sk_buff *tskb = segs;
 		struct sock *sk = head_skb->sk;
 		int queue_mapping_ver;
+		unsigned long flags;
 		bool slow;
 
 		/* XXX: BUG: This may be called from many different contexts.
@@ -3332,6 +3345,8 @@ perform_csum_check:
 		/* XXX: are we in NAPI? is bh_lock_sock(...) correct? */
 		//XXX: Is this causing deadlock?
 		//slow = lock_sock_fast(sk);
+
+		spin_lock_irqsave(&sk->sk_lock.qmap_slock, flags);
 
 		/* The version could have been updated since checking before
 		 * lock_sock */
@@ -3353,6 +3368,8 @@ perform_csum_check:
 		/* XXX: maybe release_sock(...)? */
 		//XXX: Is this causing deadlock?
 		//unlock_sock_fast(sk, slow);
+
+		spin_unlock_irqrestore(&sk->sk_lock.qmap_slock, flags);
 	}
 #endif
 

@@ -441,9 +441,19 @@ static int dev_queues_seq_show(struct seq_file *seq, void *v)
 		     trace_i <= atomic_read(&txq->tx_sk_trace_maxi) &&
 		     trace_i < DQA_TXQ_TRACE_MAX_ENTRIES; trace_i++) {
 			trace = &txq->tx_sk_trace[trace_i];
+
+			/* XXX: Go back to this style of printing after debugging */
 			seq_printf(seq, "    - {ts: %ld.%.9ld, enqcnt: %d}\n",
 				   trace->tv.tv_sec, trace->tv.tv_nsec,
 				   trace->enqcnt);
+
+			/* XXX: This style of printing is useful for
+			 * correlating events back to dmesg */
+			//u64 ts = trace->ts_nsec;
+			//u64 rem_nsec;
+			//rem_nsec = do_div(ts, 1000000000);
+			//seq_printf(seq, "    - {ts: %5lu.%06lu, enqcnt: %d}\n",
+			//	   ts, rem_nsec, trace->enqcnt);
 		}
 	}
 

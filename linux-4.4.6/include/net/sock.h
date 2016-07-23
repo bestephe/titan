@@ -121,6 +121,15 @@ typedef struct {
 #ifdef CONFIG_DEBUG_LOCK_ALLOC
 	struct lockdep_map dep_map;
 #endif
+
+#ifdef CONFIG_DQA
+	/* XXX: BS: I don't know why I can't use slock to synchronize from
+	 * within a softirq, but doing so is causing deadlock, so I'm tyring
+	 * out my own spinlock for queue mappings to see if that solves the
+	 * problem. */
+	/* XXX: Also, this field probably shouldn't be in the structure. */
+	spinlock_t		qmap_slock;
+#endif
 } socket_lock_t;
 
 struct sock;
@@ -1654,8 +1663,9 @@ static inline void sk_tx_queue_set(struct sock *sk, int tx_queue)
 	atomic_inc(&sk->sk_tx_queue_mapping_ver);
 	atomic_set(&sk->sk_tx_enqcnt, 0);
 
-	//printk (KERN_ERR "sk_tx_queue_set: queue_mapping: %d. ver: %d\n",
-	//	tx_queue, atomic_read(&sk->sk_tx_queue_mapping_ver));
+	//printk (KERN_ERR "sk_tx_queue_set: sk: %p, queue_mapping: %d, "
+	//	"ver: %d, cpu: %d\n", sk, tx_queue,
+	//	atomic_read(&sk->sk_tx_queue_mapping_ver), smp_processor_id());
 #endif
 }
 
@@ -1707,10 +1717,11 @@ static inline void sk_tx_queue_clear(struct sock *sk)
 	atomic_set(&sk->sk_tx_enqcnt, 0);
 
 	/* XXX: DEBUG */
-	//printk (KERN_ERR "sk_tx_queue_clear: sk: %p\n", sk);
-	//printk (KERN_ERR " queue_mapping: %d. ver: %d\n",
-	//	sk->sk_tx_queue_mapping,
-	//	atomic_read(&sk->sk_tx_queue_mapping_ver));
+	//printk (KERN_ERR "sk_tx_queue_clear: sk: %p "
+	//	"queue_mapping: %d. ver: %d, cpu: %d\n",
+	//	sk, sk->sk_tx_queue_mapping,
+	//	atomic_read(&sk->sk_tx_queue_mapping_ver),
+	//	smp_processor_id());
 #endif
 }
 

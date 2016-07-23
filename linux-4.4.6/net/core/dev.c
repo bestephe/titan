@@ -3229,6 +3229,7 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 	int queue_index = sk_tx_queue_get(sk);
 
 #ifdef CONFIG_DQA
+	unsigned long flags;
 	bool slow;
 #endif
 
@@ -3257,13 +3258,28 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 			 * function. */
 			struct netdev_queue *txq;
 
+			//bh_lock_sock(sk); /
+			//netdev_warn(dev, "__netdev_pick_tx: sock lock: %d\n",
+			//	    spin_is_locked(&sk->sk_lock.slock));
+
+			/* XXX: bh_lock_sock(...) causes deadlock even though the lock isn't held? */
+			//spin_lock_bh(&sk->sk_lock.slock);
+			spin_lock_irqsave(&sk->sk_lock.qmap_slock, flags);
+
 			/* Update the count for the old queue if the old
 			 * queue was in use. */
 			if (queue_index >= 0 &&
 			    queue_index < dev->real_num_tx_queues &&
 			    atomic_read(&sk->sk_tx_enqcnt)) {
 				//XXX: is this needed? locking?
-				netdev_warn(dev, "__netdev_pick_tx: clearing queue with non-zero enqcnt");
+
+				netdev_warn(dev, "__netdev_pick_tx: clearing queue with non-zero enqcnt:");
+				netdev_warn(dev, "  sk: %p, sk_tx_enqcnt: %d, "
+					    "sk_tx_queue_mapping_ver: %d, cpu: %d\n",
+					    sk, atomic_read(&sk->sk_tx_enqcnt),
+					    atomic_read(&sk->sk_tx_queue_mapping_ver),
+					    smp_processor_id());
+
 				//XXX: UGLY. But tx_queue_clear only works if
 				//the sk_tx_enqcnt == 0 right now.  Is setting
 				//it back to zero a bad race condition?
@@ -3276,6 +3292,11 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 				 * this block could be refactored to somewhere
 				 * else.  netdev_sk_enqcnt_dec? */
 				txq = netdev_get_tx_queue(dev, queue_index);
+
+				/* XXX: skip decrementing the queue here?  I
+				 * don't think this will actually fix the race
+				 * condition thats going on, but it may stop
+				 * the off by one error. */
 				netdev_sk_enqcnt_dec(txq);
 
 				//netdev_err(dev, "__netdev_pick_tx: "
@@ -3303,12 +3324,22 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 			sk_tx_queue_set(sk, new_index);
 
 #ifdef CONFIG_DQA
+			/* TODO: I should go and enqueue the skb right here to
+			 * avoid queue mapping race conditions. */
+			sk_tx_enq(sk, skb);
+
+
 			/* TODO: is locking needed here? */
 			/* XXX: UGLY */
 			//XXX: Locking here causes deadlock?
 			//bh_unlock_sock(sk);
 			//unlock_sock_fast(sk, slow);
 			//release_sock(sk);
+
+			/* XXX: bh_lock_sock(...) causes deadlock even though
+			 * the lock isn't held? */
+			//spin_unlock_bh(&sk->sk_lock.slock);
+			spin_unlock_irqrestore(&sk->sk_lock.qmap_slock, flags);
 #endif
 		}
 
@@ -3327,16 +3358,21 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 	 * I don't know exactly how this should be handled right now. */
 	/* TODO: is locking needed here? Having to acquire a lock for every skb
 	 * seems wrong. */
-	if (sk && sk_fullsock(sk) && sk_tx_queue_get(sk) >= 0) {
+	if (sk && sk_fullsock(sk) && sk_tx_queue_get(sk) >= 0 && 
+	    skb->enq_cnt == 0) {
 		//XXX: Locking here causes deadlock?
 		//bh_lock_sock(sk);
 		//slow = lock_sock_fast(sk);
+
+		spin_lock_irqsave(&sk->sk_lock.qmap_slock, flags);
 
 		sk_tx_enq(sk, skb);
 
 		//XXX: Locking here causes deadlock?
 		//bh_unlock_sock(sk);
 		//unlock_sock_fast(sk, slow);
+
+		spin_unlock_irqrestore(&sk->sk_lock.qmap_slock, flags);
 	}
 #endif
 
