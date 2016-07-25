@@ -130,9 +130,11 @@ IXGBE_PARAM(DCA, "Disable or enable Direct Cache Access, 0=disabled, "
 IXGBE_PARAM(RSS, "Number of Receive-Side Scaling Descriptor Queues, "
 	    "default 0=number of cpus");
 
-IXGBE_PARAM(TSO,"Disable or enable TSO, 0=disabled, 1=enabled");
+IXGBE_PARAM(TSO, "Disable or enable TSO, 0=disabled, 1=enabled");
 
-IXGBE_PARAM(WRR,"Use WRR scheduling between Tx queues. 0=disabled. 1=enabled");
+IXGBE_PARAM(WRR, "Use WRR scheduling between Tx queues. 0=disabled. 1=enabled");
+
+IXGBE_PARAM(UsePoolQueues,  "Transparently use all of the queues in a pool. 0=disabled. 1=enabled");
 
 IXGBE_PARAM(XmitBatch, "Use xmit batching, 0=disabled, 1=enabled");
 
@@ -759,6 +761,41 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
                 }
 #endif
         }
+	{ /* Use all of the tx queues in a pool */
+                static struct ixgbe_option opt = {
+                        .type = enable_option,
+                        .name = "Use all pool queues",
+                        .err  = "defaulting to Disabled",
+                        .def  = OPTION_DISABLED
+                };
+#ifdef module_param_array
+                if (num_UsePoolQueues > bd) {
+#endif
+                        unsigned int use_pool_queues = UsePoolQueues[bd];
+			//printk("UsePoolQueues value :::: %d",tso);
+                        ixgbe_validate_option(&use_pool_queues, &opt);
+			if(use_pool_queues)
+			{
+				pr_info ("Enabling UsePoolQueues\n");
+                                adapter->use_pool_queues = true;
+			}
+			else
+			{
+				pr_info ("Disabling UsePoolQueues\n");
+				adapter->use_pool_queues = false;
+			}
+
+#ifdef module_param_array
+                } else {
+                        if (opt.def == OPTION_ENABLED)
+                                adapter->use_pool_queues = true;
+                        else
+				adapter->use_pool_queues = false;
+			pr_info ("Default UsePoolQueues value: %d\n",
+				 adapter->use_pool_queues);
+                }
+#endif
+        }
 	{ /* Xmit Batching */
                 static struct ixgbe_option opt = {
                         .type = enable_option,
@@ -916,7 +953,7 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 			.type = range_option,
 			.name = "Virtual Machine Device Queues (VMDQ)",
 			.err  = "defaulting to Disabled",
-			.def  = OPTION_DISABLED,
+			.def  = 16,
 			.arg  = { .r = { .min = OPTION_DISABLED,
 					 .max = IXGBE_MAX_VMDQ_INDICES
 				} }
@@ -967,6 +1004,16 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 				feature[RING_F_VMDQ].limit = 0;
 			}
 		}
+
+                /* XXX: HACK to ensure that VMDq is always enabled */
+		if (!(*aflags & IXGBE_FLAG_VMDQ_ENABLED)) {
+			DPRINTK(PROBE, INFO,
+				"The QWeight version of ixgbe requires that "
+				"VMDq is enabled. Enabling VMDq.\n");
+
+			*aflags |= IXGBE_FLAG_VMDQ_ENABLED;
+			feature[RING_F_VMDQ].limit = opt.def;
+                }
 	}
 #ifdef CONFIG_PCI_IOV
 	{ /* Single Root I/O Virtualization (SR-IOV) */

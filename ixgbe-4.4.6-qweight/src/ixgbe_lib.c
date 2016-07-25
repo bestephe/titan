@@ -623,10 +623,22 @@ static bool ixgbe_set_vmdq_queues(struct ixgbe_adapter *adapter)
 	adapter->num_rx_queues_per_pool = rss_i;
 
 	adapter->num_rx_queues = vmdq_i * rss_i;
+
 #ifdef HAVE_TX_MQ
 	adapter->num_tx_queues = vmdq_i * rss_i;
+	adapter->num_tx_pools = vmdq_i;
+	adapter->num_tx_queues_per_pool = rss_i;
+	if (rss_m == IXGBE_RSS_2Q_MASK) {
+		adapter->tx_queue_shift = 1;
+	} else if (rss_m == IXGBE_RSS_4Q_MASK) {
+		adapter->tx_queue_shift = 2;
+	} else {
+		pr_err("Unknown rss mask? Driver may misbehave\n");
+	}
 #else
 	adapter->num_tx_queues = vmdq_i;
+	adapter->num_tx_pools = vmdq_i;
+	adapter->num_tx_queues_per_pool = 1;
 #endif /* HAVE_TX_MQ */
 
 	/* disable ATR as it is not supported when VMDq is enabled */
@@ -765,9 +777,12 @@ static void ixgbe_set_num_queues(struct ixgbe_adapter *adapter)
 {
 	/* Start with base case */
 	adapter->num_rx_queues = 1;
-	adapter->num_tx_queues = 1;
 	adapter->num_rx_pools = adapter->num_rx_queues;
 	adapter->num_rx_queues_per_pool = 1;
+	adapter->num_tx_queues = 1;
+	adapter->num_tx_pools = adapter->num_tx_queues;
+	adapter->num_tx_queues_per_pool = 1;
+	adapter->tx_queue_shift = 0;
 
         /* XXX: This function may need to change. */
 
@@ -909,6 +924,11 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 #endif
 	int ring_count, size;
 
+	/* XXX: Interleaving must be disabled because we are lying about tx
+	 * queues and presenting a tx pool as a single queue.  Code below
+	 * assumes v_count == 1. */
+	BUG_ON(v_count != 1);
+
 	/* note this will allocate space for the ring structure as well! */
 	ring_count = txr_count + rxr_count;
 	size = sizeof(struct ixgbe_q_vector) +
@@ -999,6 +1019,8 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 		/* apply Tx specific ring traits */
 		ring->count = adapter->tx_ring_count;
 		ring->queue_index = txr_idx;
+		/* XXX: assumes v_count == 1 */
+		ring->netdev_queue_index = txr_idx >> adapter->tx_queue_shift;
 
 		/* assign ring to adapter */
 		adapter->tx_ring[txr_idx] = ring;
@@ -1044,6 +1066,7 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 		/* apply Rx specific ring traits */
 		ring->count = adapter->rx_ring_count;
 		ring->queue_index = rxr_idx;
+		ring->netdev_queue_index = rxr_idx;
 
 		/* assign ring to adapter */
 		adapter->rx_ring[rxr_idx] = ring;
@@ -1062,7 +1085,8 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
             pr_err(" rxq-%d\n", ring->queue_index);
         }
         ixgbe_for_each_ring(ring, q_vector->tx) {
-            pr_err(" txq-%d\n", ring->queue_index);
+            pr_err(" txq-%d (netdev txq-%d)\n", ring->queue_index,
+		   ring->netdev_queue_index);
         }
 
 	return 0;

@@ -253,6 +253,10 @@ struct vf_macvlans {
 #define DESC_NEEDED	(MAX_SKB_FRAGS + 4)
 #endif
 
+/* Minimum Tx WRR credit */
+#define IXGBE_MIN_WRR_CREDIT(netdev)	\
+	((((netdev)->mtu / 2) + IXGBE_DCB_CREDIT_QUANTUM - 1) / IXGBE_DCB_CREDIT_QUANTUM)
+
 //XXX: These next definitions may be out of place
 #define IXGBE_MAX_PKT_BYTES                     (2048)
 //#define IXGBE_TX_PKT_RING_SIZE                  (2048)
@@ -524,7 +528,11 @@ enum ixgbe_ring_state_t {
 #define clear_ring_rsc_enabled(ring) \
 	clear_bit(__IXGBE_RX_RSC_ENABLED, &(ring)->state)
 #define netdev_ring(ring) (ring->netdev)
-#define ring_queue_index(ring) (ring->queue_index)
+
+/* XXX: This is only used for communicating to the OS, so it should return the
+ * fake index. */
+//#define ring_queue_index(ring) (ring->queue_index)
+#define ring_queue_index(ring) (ring->netdev_queue_index)
 
 #define IXGBE_MAX_BATCH_SIZE_STATS      (1024 * 256)
 
@@ -594,6 +602,9 @@ struct ixgbe_ring {
         u64 skb_batch_size_of_one_stats;
 
 	u8 queue_index; /* needed for multiqueue queue management */
+	u8 netdev_queue_index; /* needed for lying to the OS about the number of TX queues */
+	u8 needs_tail_update; /* Used in case skb->xmit_more is spread across
+			       * multiple shadow queues. */
 	u8 reg_idx;			/* holds the special value that gets
 					 * the hardware register offset
 					 * associated with this ring, which is
@@ -1040,6 +1051,7 @@ struct ixgbe_adapter {
 
         /* Variables for changing driver config to make experiments easier */
         bool wrr;
+        bool use_pool_queues;
         bool xmit_batch;
         bool use_sgseg;
         bool use_pkt_ring;
@@ -1048,6 +1060,9 @@ struct ixgbe_adapter {
 
 	/* Tx fast path data */
 	int num_tx_queues;
+	int num_tx_pools;
+	int num_tx_queues_per_pool;
+	int tx_queue_shift;
 	u16 tx_itr_setting;
 	u16 tx_work_limit;
 
@@ -1402,7 +1417,10 @@ void ixgbe_dbg_exit(void);
 #if IS_ENABLED(CONFIG_BQL) || defined(HAVE_SKB_XMIT_MORE)
 static inline struct netdev_queue *txring_txq(const struct ixgbe_ring *ring)
 {
-	return netdev_get_tx_queue(ring->netdev, ring->queue_index);
+	/* XXX: We are lying to the OS about the number of tx queues. */
+	//return netdev_get_tx_queue(ring->netdev, ring->queue_index);
+
+	return netdev_get_tx_queue(ring->netdev, ring->netdev_queue_index);
 }
 #endif
 
