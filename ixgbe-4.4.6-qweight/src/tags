@@ -128,12 +128,12 @@ DECLARE_BITMAP	kcompat.h	280;"	d
 DECLARE_PCI_UNMAP_ADDR	kcompat.h	2008;"	d
 DECLARE_PCI_UNMAP_LEN	kcompat.h	2010;"	d
 DEFAULT_DEBUG_LEVEL_SHIFT	ixgbe_main.c	154;"	d	file:
-DEFAULT_ITR	ixgbe_param.c	202;"	d	file:
-DEFAULT_LLIETYPE	ixgbe_param.c	254;"	d	file:
-DEFAULT_LLIPORT	ixgbe_param.c	218;"	d	file:
-DEFAULT_LLIPUSH	ixgbe_param.c	230;"	d	file:
-DEFAULT_LLISIZE	ixgbe_param.c	242;"	d	file:
-DEFAULT_LLIVLANP	ixgbe_param.c	266;"	d	file:
+DEFAULT_ITR	ixgbe_param.c	204;"	d	file:
+DEFAULT_LLIETYPE	ixgbe_param.c	256;"	d	file:
+DEFAULT_LLIPORT	ixgbe_param.c	220;"	d	file:
+DEFAULT_LLIPUSH	ixgbe_param.c	232;"	d	file:
+DEFAULT_LLISIZE	ixgbe_param.c	244;"	d	file:
+DEFAULT_LLIVLANP	ixgbe_param.c	268;"	d	file:
 DEFINE_DMA_UNMAP_ADDR	kcompat.h	2987;"	d
 DEFINE_DMA_UNMAP_ADDR	kcompat.h	2988;"	d
 DEFINE_DMA_UNMAP_ADDR	kcompat.h	3198;"	d
@@ -427,7 +427,7 @@ IEEE_8021QAZ_TSA_ETS	kcompat.h	3574;"	d
 IEEE_8021QAZ_TSA_STRICT	kcompat.h	3571;"	d
 INCLUDE_PM_QOS_PARAMS_H	kcompat.h	2478;"	d
 INCVALUE_MASK	ixgbe_ptp.c	159;"	d	file:
-INFO_STRING_LEN	ixgbe_main.c	11519;"	d	file:
+INFO_STRING_LEN	ixgbe_main.c	11746;"	d	file:
 INIT_HLIST_HEAD	kcompat.h	1349;"	d
 INIT_HLIST_NODE	kcompat.h	/^static inline void INIT_HLIST_NODE(struct hlist_node *h)$/;"	f
 INIT_TQUEUE	kcompat.h	867;"	d
@@ -455,10 +455,10 @@ IS_ENABLED	kcompat.h	325;"	d
 IXGBEVF_XCAST_MODE_ALLMULTI	ixgbe.h	/^	IXGBEVF_XCAST_MODE_ALLMULTI,$/;"	e	enum:ixgbevf_xcast_modes
 IXGBEVF_XCAST_MODE_MULTI	ixgbe.h	/^	IXGBEVF_XCAST_MODE_MULTI,$/;"	e	enum:ixgbevf_xcast_modes
 IXGBEVF_XCAST_MODE_NONE	ixgbe.h	/^	IXGBEVF_XCAST_MODE_NONE = 0,$/;"	e	enum:ixgbevf_xcast_modes
-IXGBE_100K_ITR	ixgbe.h	856;"	d
-IXGBE_12K_ITR	ixgbe.h	859;"	d
-IXGBE_16K_ITR	ixgbe.h	858;"	d
-IXGBE_20K_ITR	ixgbe.h	857;"	d
+IXGBE_100K_ITR	ixgbe.h	867;"	d
+IXGBE_12K_ITR	ixgbe.h	870;"	d
+IXGBE_16K_ITR	ixgbe.h	869;"	d
+IXGBE_20K_ITR	ixgbe.h	868;"	d
 IXGBE_82598_MAX_RX_QUEUES	ixgbe_82598.c	32;"	d	file:
 IXGBE_82598_MAX_TX_QUEUES	ixgbe_82598.c	31;"	d	file:
 IXGBE_82598_MC_TBL_SIZE	ixgbe_82598.c	34;"	d	file:
@@ -472,9 +472,9 @@ IXGBE_82599_RAR_ENTRIES	ixgbe_82599.c	33;"	d	file:
 IXGBE_82599_RX_PB_SIZE	ixgbe_82599.c	36;"	d	file:
 IXGBE_82599_VFT_TBL_SIZE	ixgbe_82599.c	35;"	d	file:
 IXGBE_82599_VF_DEVICE_ID	ixgbe.h	167;"	d
-IXGBE_82599_VMDQ_2Q_MASK	ixgbe.h	673;"	d
-IXGBE_82599_VMDQ_4Q_MASK	ixgbe.h	672;"	d
-IXGBE_82599_VMDQ_8Q_MASK	ixgbe.h	671;"	d
+IXGBE_82599_VMDQ_2Q_MASK	ixgbe.h	684;"	d
+IXGBE_82599_VMDQ_4Q_MASK	ixgbe.h	683;"	d
+IXGBE_82599_VMDQ_8Q_MASK	ixgbe.h	682;"	d
 IXGBE_ADVTXD_CC	ixgbe_type.h	3175;"	d
 IXGBE_ADVTXD_DCMD_DDTYP_ISCSI	ixgbe_type.h	3167;"	d
 IXGBE_ADVTXD_DCMD_DEXT	ixgbe_type.h	3168;"	d
@@ -591,7 +591,7 @@ IXGBE_ATR_L4TYPE_SCTP	ixgbe_type.h	3325;"	d
 IXGBE_ATR_L4TYPE_TCP	ixgbe_type.h	3324;"	d
 IXGBE_ATR_L4TYPE_TUNNEL_MASK	ixgbe_type.h	3327;"	d
 IXGBE_ATR_L4TYPE_UDP	ixgbe_type.h	3323;"	d
-IXGBE_ATR_SAMPLE_RATE_OFF	ixgbe_param.c	298;"	d	file:
+IXGBE_ATR_SAMPLE_RATE_OFF	ixgbe_param.c	300;"	d	file:
 IXGBE_ATR_SIGNATURE_HASH_KEY	ixgbe_type.h	3318;"	d
 IXGBE_AUTOC	ixgbe_type.h	1259;"	d
 IXGBE_AUTOC2	ixgbe_type.h	1262;"	d
@@ -689,7 +689,7 @@ IXGBE_BY_MAC	ixgbe_type.h	129;"	d
 IXGBE_CABLE_DC	ixgbe_type.h	3266;"	d
 IXGBE_CABLE_DO	ixgbe_type.h	3267;"	d
 IXGBE_CAT	ixgbe_type.h	127;"	d
-IXGBE_CB	ixgbe.h	1276;"	d
+IXGBE_CB	ixgbe.h	1291;"	d
 IXGBE_CDQ_MBR_82599	ixgbe_type.h	1117;"	d
 IXGBE_CIAA	ixgbe_type.h	1095;"	d
 IXGBE_CIAA_82599	ixgbe_type.h	1097;"	d
@@ -722,7 +722,7 @@ IXGBE_CPU_TO_BE16	ixgbe_osdep.h	40;"	d
 IXGBE_CPU_TO_BE32	ixgbe_osdep.h	42;"	d
 IXGBE_CPU_TO_LE32	ixgbe_osdep.h	142;"	d
 IXGBE_CRCERRS	ixgbe_type.h	875;"	d
-IXGBE_CRQ_MASK	ixgbe_main.c	3080;"	d	file:
+IXGBE_CRQ_MASK	ixgbe_main.c	3096;"	d	file:
 IXGBE_CS4223_PHY_ID	ixgbe_phy.h	86;"	d
 IXGBE_CS4227	ixgbe_phy.h	81;"	d
 IXGBE_CS4227_CHECK_DELAY	ixgbe_phy.h	105;"	d
@@ -808,12 +808,12 @@ IXGBE_DCB_TX_CONFIG	ixgbe_dcb.h	46;"	d
 IXGBE_DCB_UP2TC_SUPPORT	ixgbe_dcb.h	53;"	d
 IXGBE_DEAD_READ_REG	ixgbe_osdep.h	108;"	d
 IXGBE_DEAD_READ_RETRIES	ixgbe_osdep.h	107;"	d
-IXGBE_DEFAULT_ATR_SAMPLE_RATE	ixgbe_param.c	299;"	d	file:
+IXGBE_DEFAULT_ATR_SAMPLE_RATE	ixgbe_param.c	301;"	d	file:
 IXGBE_DEFAULT_FCPAUSE	ixgbe.h	103;"	d
-IXGBE_DEFAULT_FDIR_PBALLOC	ixgbe_param.c	286;"	d	file:
-IXGBE_DEFAULT_HDR_RING_BYTES	ixgbe.h	274;"	d
+IXGBE_DEFAULT_FDIR_PBALLOC	ixgbe_param.c	288;"	d	file:
+IXGBE_DEFAULT_HDR_RING_BYTES	ixgbe.h	278;"	d
 IXGBE_DEFAULT_INT	ixgbe_param.c	79;"	d	file:
-IXGBE_DEFAULT_NUM_VMDQ	ixgbe_param.c	158;"	d	file:
+IXGBE_DEFAULT_NUM_VMDQ	ixgbe_param.c	160;"	d	file:
 IXGBE_DEFAULT_RXD	ixgbe.h	91;"	d
 IXGBE_DEFAULT_RX_WORK	ixgbe.h	92;"	d
 IXGBE_DEFAULT_TXD	ixgbe.h	86;"	d
@@ -1162,7 +1162,7 @@ IXGBE_ESDP_SDP6_DIR	ixgbe_type.h	2017;"	d
 IXGBE_ESDP_SDP7	ixgbe_type.h	2010;"	d
 IXGBE_ESDP_SDP7_DIR	ixgbe_type.h	2018;"	d
 IXGBE_ETHERNET_IEEE_VLAN_TYPE	ixgbe_type.h	1992;"	d
-IXGBE_ETH_FRAMING	ixgbe_main.c	5213;"	d	file:
+IXGBE_ETH_FRAMING	ixgbe_main.c	5302;"	d	file:
 IXGBE_ETH_LENGTH_OF_ADDRESS	ixgbe_type.h	2299;"	d
 IXGBE_ETH_P_LLDP	ixgbe.h	96;"	d
 IXGBE_ETQF	ixgbe_type.h	387;"	d
@@ -1272,7 +1272,7 @@ IXGBE_FCOE_DDP_MAX_X550	ixgbe_fcoe.h	47;"	d
 IXGBE_FCOE_DEFUP	ixgbe_fcoe.h	50;"	d
 IXGBE_FCOE_IBA_CAPS_BLK_PTR	ixgbe_type.h	2337;"	d
 IXGBE_FCOE_IBA_CAPS_FCOE	ixgbe_type.h	2338;"	d
-IXGBE_FCOE_JUMBO_FRAME_SIZE	ixgbe.h	907;"	d
+IXGBE_FCOE_JUMBO_FRAME_SIZE	ixgbe.h	918;"	d
 IXGBE_FCPARAM	ixgbe_type.h	841;"	d
 IXGBE_FCPTRH	ixgbe_type.h	811;"	d
 IXGBE_FCPTRL	ixgbe_type.h	810;"	d
@@ -1431,57 +1431,57 @@ IXGBE_FHFT_EXT_X550	ixgbe_type.h	530;"	d
 IXGBE_FHFT_LENGTH_MASK	ixgbe_type.h	544;"	d
 IXGBE_FHFT_LENGTH_OFFSET	ixgbe_type.h	543;"	d
 IXGBE_FLA	ixgbe_type.h	164;"	d
-IXGBE_FLAG2_FDIR_REQUIRES_REINIT	ixgbe.h	1031;"	d
-IXGBE_FLAG2_PHY_INTERRUPT	ixgbe.h	1036;"	d
-IXGBE_FLAG2_PTP_PPS_ENABLED	ixgbe.h	1034;"	d
-IXGBE_FLAG2_RESET_REQUESTED	ixgbe.h	1030;"	d
-IXGBE_FLAG2_RSC_CAPABLE	ixgbe.h	1024;"	d
-IXGBE_FLAG2_RSC_ENABLED	ixgbe.h	1025;"	d
-IXGBE_FLAG2_RSS_FIELD_IPV4_UDP	ixgbe.h	1032;"	d
-IXGBE_FLAG2_RSS_FIELD_IPV6_UDP	ixgbe.h	1033;"	d
-IXGBE_FLAG2_SEARCH_FOR_SFP	ixgbe.h	1028;"	d
-IXGBE_FLAG2_SFP_NEEDS_RESET	ixgbe.h	1029;"	d
-IXGBE_FLAG2_TEMP_SENSOR_CAPABLE	ixgbe.h	1026;"	d
-IXGBE_FLAG2_TEMP_SENSOR_EVENT	ixgbe.h	1027;"	d
-IXGBE_FLAG2_VLAN_PROMISC	ixgbe.h	1037;"	d
-IXGBE_FLAG2_VXLAN_REREG_NEEDED	ixgbe.h	1035;"	d
-IXGBE_FLAGS_82598_INIT	ixgbe.h	1011;"	d
-IXGBE_FLAGS_82599_INIT	ixgbe.h	1015;"	d
+IXGBE_FLAG2_FDIR_REQUIRES_REINIT	ixgbe.h	1042;"	d
+IXGBE_FLAG2_PHY_INTERRUPT	ixgbe.h	1047;"	d
+IXGBE_FLAG2_PTP_PPS_ENABLED	ixgbe.h	1045;"	d
+IXGBE_FLAG2_RESET_REQUESTED	ixgbe.h	1041;"	d
+IXGBE_FLAG2_RSC_CAPABLE	ixgbe.h	1035;"	d
+IXGBE_FLAG2_RSC_ENABLED	ixgbe.h	1036;"	d
+IXGBE_FLAG2_RSS_FIELD_IPV4_UDP	ixgbe.h	1043;"	d
+IXGBE_FLAG2_RSS_FIELD_IPV6_UDP	ixgbe.h	1044;"	d
+IXGBE_FLAG2_SEARCH_FOR_SFP	ixgbe.h	1039;"	d
+IXGBE_FLAG2_SFP_NEEDS_RESET	ixgbe.h	1040;"	d
+IXGBE_FLAG2_TEMP_SENSOR_CAPABLE	ixgbe.h	1037;"	d
+IXGBE_FLAG2_TEMP_SENSOR_EVENT	ixgbe.h	1038;"	d
+IXGBE_FLAG2_VLAN_PROMISC	ixgbe.h	1048;"	d
+IXGBE_FLAG2_VXLAN_REREG_NEEDED	ixgbe.h	1046;"	d
+IXGBE_FLAGS_82598_INIT	ixgbe.h	1022;"	d
+IXGBE_FLAGS_82599_INIT	ixgbe.h	1026;"	d
 IXGBE_FLAGS_DOUBLE_RESET_REQUIRED	ixgbe_type.h	3865;"	d
-IXGBE_FLAGS_X540_INIT	ixgbe.h	1018;"	d
-IXGBE_FLAGS_X550_INIT	ixgbe.h	1020;"	d
-IXGBE_FLAG_DCA_CAPABLE	ixgbe.h	979;"	d
-IXGBE_FLAG_DCA_CAPABLE	ixgbe.h	983;"	d
-IXGBE_FLAG_DCA_ENABLED	ixgbe.h	978;"	d
-IXGBE_FLAG_DCA_ENABLED	ixgbe.h	982;"	d
-IXGBE_FLAG_DCA_ENABLED_DATA	ixgbe.h	980;"	d
-IXGBE_FLAG_DCA_ENABLED_DATA	ixgbe.h	984;"	d
-IXGBE_FLAG_DCB_CAPABLE	ixgbe.h	1008;"	d
-IXGBE_FLAG_DCB_ENABLED	ixgbe.h	987;"	d
-IXGBE_FLAG_FAN_FAIL_CAPABLE	ixgbe.h	989;"	d
-IXGBE_FLAG_FCOE_CAPABLE	ixgbe.h	995;"	d
-IXGBE_FLAG_FCOE_ENABLED	ixgbe.h	996;"	d
-IXGBE_FLAG_FDIR_HASH_CAPABLE	ixgbe.h	992;"	d
-IXGBE_FLAG_FDIR_PERFECT_CAPABLE	ixgbe.h	993;"	d
-IXGBE_FLAG_LLI_PUSH	ixgbe.h	974;"	d
-IXGBE_FLAG_MDD_ENABLED	ixgbe.h	1007;"	d
-IXGBE_FLAG_MQ_CAPABLE	ixgbe.h	986;"	d
-IXGBE_FLAG_MSIX_CAPABLE	ixgbe.h	971;"	d
-IXGBE_FLAG_MSIX_ENABLED	ixgbe.h	972;"	d
-IXGBE_FLAG_MSI_CAPABLE	ixgbe.h	969;"	d
-IXGBE_FLAG_MSI_ENABLED	ixgbe.h	970;"	d
-IXGBE_FLAG_NEED_LINK_CONFIG	ixgbe.h	991;"	d
-IXGBE_FLAG_NEED_LINK_UPDATE	ixgbe.h	990;"	d
-IXGBE_FLAG_RX_HWTSTAMP_ENABLED	ixgbe.h	1003;"	d
-IXGBE_FLAG_RX_HWTSTAMP_IN_REGISTER	ixgbe.h	1006;"	d
-IXGBE_FLAG_SRIOV_CAPABLE	ixgbe.h	998;"	d
-IXGBE_FLAG_SRIOV_ENABLED	ixgbe.h	999;"	d
-IXGBE_FLAG_SRIOV_L2SWITCH_ENABLE	ixgbe.h	1001;"	d
-IXGBE_FLAG_SRIOV_REPLICATION_ENABLE	ixgbe.h	1000;"	d
-IXGBE_FLAG_SRIOV_VEPA_BRIDGE_MODE	ixgbe.h	1002;"	d
-IXGBE_FLAG_VMDQ_ENABLED	ixgbe.h	988;"	d
-IXGBE_FLAG_VXLAN_OFFLOAD_CAPABLE	ixgbe.h	1004;"	d
-IXGBE_FLAG_VXLAN_OFFLOAD_ENABLE	ixgbe.h	1005;"	d
+IXGBE_FLAGS_X540_INIT	ixgbe.h	1029;"	d
+IXGBE_FLAGS_X550_INIT	ixgbe.h	1031;"	d
+IXGBE_FLAG_DCA_CAPABLE	ixgbe.h	990;"	d
+IXGBE_FLAG_DCA_CAPABLE	ixgbe.h	994;"	d
+IXGBE_FLAG_DCA_ENABLED	ixgbe.h	989;"	d
+IXGBE_FLAG_DCA_ENABLED	ixgbe.h	993;"	d
+IXGBE_FLAG_DCA_ENABLED_DATA	ixgbe.h	991;"	d
+IXGBE_FLAG_DCA_ENABLED_DATA	ixgbe.h	995;"	d
+IXGBE_FLAG_DCB_CAPABLE	ixgbe.h	1019;"	d
+IXGBE_FLAG_DCB_ENABLED	ixgbe.h	998;"	d
+IXGBE_FLAG_FAN_FAIL_CAPABLE	ixgbe.h	1000;"	d
+IXGBE_FLAG_FCOE_CAPABLE	ixgbe.h	1006;"	d
+IXGBE_FLAG_FCOE_ENABLED	ixgbe.h	1007;"	d
+IXGBE_FLAG_FDIR_HASH_CAPABLE	ixgbe.h	1003;"	d
+IXGBE_FLAG_FDIR_PERFECT_CAPABLE	ixgbe.h	1004;"	d
+IXGBE_FLAG_LLI_PUSH	ixgbe.h	985;"	d
+IXGBE_FLAG_MDD_ENABLED	ixgbe.h	1018;"	d
+IXGBE_FLAG_MQ_CAPABLE	ixgbe.h	997;"	d
+IXGBE_FLAG_MSIX_CAPABLE	ixgbe.h	982;"	d
+IXGBE_FLAG_MSIX_ENABLED	ixgbe.h	983;"	d
+IXGBE_FLAG_MSI_CAPABLE	ixgbe.h	980;"	d
+IXGBE_FLAG_MSI_ENABLED	ixgbe.h	981;"	d
+IXGBE_FLAG_NEED_LINK_CONFIG	ixgbe.h	1002;"	d
+IXGBE_FLAG_NEED_LINK_UPDATE	ixgbe.h	1001;"	d
+IXGBE_FLAG_RX_HWTSTAMP_ENABLED	ixgbe.h	1014;"	d
+IXGBE_FLAG_RX_HWTSTAMP_IN_REGISTER	ixgbe.h	1017;"	d
+IXGBE_FLAG_SRIOV_CAPABLE	ixgbe.h	1009;"	d
+IXGBE_FLAG_SRIOV_ENABLED	ixgbe.h	1010;"	d
+IXGBE_FLAG_SRIOV_L2SWITCH_ENABLE	ixgbe.h	1012;"	d
+IXGBE_FLAG_SRIOV_REPLICATION_ENABLE	ixgbe.h	1011;"	d
+IXGBE_FLAG_SRIOV_VEPA_BRIDGE_MODE	ixgbe.h	1013;"	d
+IXGBE_FLAG_VMDQ_ENABLED	ixgbe.h	999;"	d
+IXGBE_FLAG_VXLAN_OFFLOAD_CAPABLE	ixgbe.h	1015;"	d
+IXGBE_FLAG_VXLAN_OFFLOAD_ENABLE	ixgbe.h	1016;"	d
 IXGBE_FLA_BY_MAC	ixgbe_type.h	168;"	d
 IXGBE_FLA_LOCKED	ixgbe_type.h	2207;"	d
 IXGBE_FLA_X540	ixgbe_type.h	165;"	d
@@ -1671,10 +1671,10 @@ IXGBE_HSMC0R	ixgbe_type.h	1005;"	d
 IXGBE_HSMC1R	ixgbe_type.h	1006;"	d
 IXGBE_HTONL	ixgbe_osdep.h	139;"	d
 IXGBE_HWMON	kcompat.h	2556;"	d
-IXGBE_HWMON_TYPE_CAUTION	ixgbe.h	834;"	d
-IXGBE_HWMON_TYPE_LOC	ixgbe.h	832;"	d
-IXGBE_HWMON_TYPE_MAX	ixgbe.h	835;"	d
-IXGBE_HWMON_TYPE_TEMP	ixgbe.h	833;"	d
+IXGBE_HWMON_TYPE_CAUTION	ixgbe.h	845;"	d
+IXGBE_HWMON_TYPE_LOC	ixgbe.h	843;"	d
+IXGBE_HWMON_TYPE_MAX	ixgbe.h	846;"	d
+IXGBE_HWMON_TYPE_TEMP	ixgbe.h	844;"	d
 IXGBE_I2CCTL	ixgbe_type.h	138;"	d
 IXGBE_I2CCTL_82599	ixgbe_type.h	137;"	d
 IXGBE_I2CCTL_BY_MAC	ixgbe_type.h	142;"	d
@@ -1996,9 +1996,9 @@ IXGBE_MAC_D	ixgbe_type.h	3278;"	d
 IXGBE_MAC_DC	ixgbe_type.h	3271;"	d
 IXGBE_MAC_GPIO	ixgbe_type.h	144;"	d
 IXGBE_MAC_RX2TX_LPBK	ixgbe_type.h	2101;"	d
-IXGBE_MAC_STATE_DEFAULT	ixgbe.h	923;"	d
-IXGBE_MAC_STATE_IN_USE	ixgbe.h	925;"	d
-IXGBE_MAC_STATE_MODIFIED	ixgbe.h	924;"	d
+IXGBE_MAC_STATE_DEFAULT	ixgbe.h	934;"	d
+IXGBE_MAC_STATE_IN_USE	ixgbe.h	936;"	d
+IXGBE_MAC_STATE_MODIFIED	ixgbe.h	935;"	d
 IXGBE_MANC	ixgbe_type.h	975;"	d
 IXGBE_MANC2H	ixgbe_type.h	977;"	d
 IXGBE_MANC_EN_BMC2OS	ixgbe_type.h	994;"	d
@@ -2007,25 +2007,25 @@ IXGBE_MANC_MPROXYE	ixgbe_type.h	992;"	d
 IXGBE_MANC_RCV_TCO_EN	ixgbe_type.h	993;"	d
 IXGBE_MAVTV	ixgbe_type.h	973;"	d
 IXGBE_MAXFRS	ixgbe_type.h	1251;"	d
-IXGBE_MAX_ATR_SAMPLE_RATE	ixgbe_param.c	296;"	d	file:
-IXGBE_MAX_BATCH_SIZE_STATS	ixgbe.h	529;"	d
+IXGBE_MAX_ATR_SAMPLE_RATE	ixgbe_param.c	298;"	d	file:
+IXGBE_MAX_BATCH_SIZE_STATS	ixgbe.h	537;"	d
 IXGBE_MAX_DATA_PER_TXD	ixgbe.h	244;"	d
 IXGBE_MAX_DCA	ixgbe_param.c	115;"	d	file:
-IXGBE_MAX_DCB_INDICES	ixgbe.h	651;"	d
+IXGBE_MAX_DCB_INDICES	ixgbe.h	662;"	d
 IXGBE_MAX_EITR	ixgbe_type.h	282;"	d
 IXGBE_MAX_ETQF_FILTERS	ixgbe_type.h	1942;"	d
-IXGBE_MAX_FCOE_INDICES	ixgbe.h	657;"	d
+IXGBE_MAX_FCOE_INDICES	ixgbe.h	668;"	d
 IXGBE_MAX_FCPAUSE	ixgbe.h	105;"	d
 IXGBE_MAX_FCRTH	ixgbe.h	102;"	d
 IXGBE_MAX_FCRTL	ixgbe.h	100;"	d
-IXGBE_MAX_FDIR_INDICES	ixgbe.h	655;"	d
+IXGBE_MAX_FDIR_INDICES	ixgbe.h	666;"	d
 IXGBE_MAX_FRAME_SZ	ixgbe_type.h	2440;"	d
 IXGBE_MAX_FTQF_FILTERS	ixgbe_type.h	1903;"	d
-IXGBE_MAX_HDR_BYTES	ixgbe.h	267;"	d
+IXGBE_MAX_HDR_BYTES	ixgbe.h	271;"	d
 IXGBE_MAX_INT_RATE	ixgbe_type.h	280;"	d
-IXGBE_MAX_JUMBO_FRAME_SIZE	ixgbe.h	904;"	d
-IXGBE_MAX_MSIX_Q_VECTORS_82598	ixgbe.h	915;"	d
-IXGBE_MAX_MSIX_Q_VECTORS_82599	ixgbe.h	914;"	d
+IXGBE_MAX_JUMBO_FRAME_SIZE	ixgbe.h	915;"	d
+IXGBE_MAX_MSIX_Q_VECTORS_82598	ixgbe.h	926;"	d
+IXGBE_MAX_MSIX_Q_VECTORS_82599	ixgbe.h	925;"	d
 IXGBE_MAX_MSIX_VECTORS_82598	ixgbe_type.h	2261;"	d
 IXGBE_MAX_MSIX_VECTORS_82599	ixgbe_type.h	2259;"	d
 IXGBE_MAX_MTA	ixgbe_type.h	3876;"	d
@@ -2034,25 +2034,25 @@ IXGBE_MAX_PACKET_BUFFERS	ixgbe_type.h	1623;"	d
 IXGBE_MAX_PB	ixgbe_type.h	1635;"	d
 IXGBE_MAX_PF_MACVLANS	ixgbe.h	166;"	d
 IXGBE_MAX_PHY_ADDR	ixgbe_type.h	1564;"	d
-IXGBE_MAX_PKT_BYTES	ixgbe.h	257;"	d
-IXGBE_MAX_RETA_ENTRIES	ixgbe.h	1214;"	d
-IXGBE_MAX_RSS_INDICES	ixgbe.h	652;"	d
-IXGBE_MAX_RSS_INDICES_X550	ixgbe.h	653;"	d
+IXGBE_MAX_PKT_BYTES	ixgbe.h	261;"	d
+IXGBE_MAX_RETA_ENTRIES	ixgbe.h	1229;"	d
+IXGBE_MAX_RSS_INDICES	ixgbe.h	663;"	d
+IXGBE_MAX_RSS_INDICES_X550	ixgbe.h	664;"	d
 IXGBE_MAX_RXBUFFER	ixgbe.h	112;"	d
 IXGBE_MAX_RXD	ixgbe.h	93;"	d
 IXGBE_MAX_RX_DESC_POLL	ixgbe.h	160;"	d
 IXGBE_MAX_SECRX_POLL	ixgbe_common.c	3018;"	d	file:
-IXGBE_MAX_SEG_BATCH	ixgbe.h	282;"	d
+IXGBE_MAX_SEG_BATCH	ixgbe.h	286;"	d
 IXGBE_MAX_SENSORS	ixgbe_type.h	251;"	d
-IXGBE_MAX_TUNNEL_HDR_LEN	ixgbe_main.c	10710;"	d	file:
+IXGBE_MAX_TUNNEL_HDR_LEN	ixgbe_main.c	10900;"	d	file:
 IXGBE_MAX_TXD	ixgbe.h	88;"	d
 IXGBE_MAX_TXD_PWR	ixgbe.h	243;"	d
 IXGBE_MAX_VFS_DRV_LIMIT	ixgbe_sriov.h	32;"	d
 IXGBE_MAX_VFTA_ENTRIES	ixgbe.h	164;"	d
 IXGBE_MAX_VF_FUNCTIONS	ixgbe.h	163;"	d
 IXGBE_MAX_VF_MC_ENTRIES	ixgbe.h	162;"	d
-IXGBE_MAX_VMDQ_INDICES	ixgbe.h	654;"	d
-IXGBE_MAX_XMIT_BATCH_SIZE	ixgbe.h	280;"	d
+IXGBE_MAX_VMDQ_INDICES	ixgbe.h	665;"	d
+IXGBE_MAX_XMIT_BATCH_SIZE	ixgbe.h	284;"	d
 IXGBE_MBVFICR	ixgbe_type.h	2758;"	d
 IXGBE_MBVFICR_INDEX	ixgbe_type.h	2757;"	d
 IXGBE_MBVFICR_VFACK_MASK	ixgbe_mbx.h	55;"	d
@@ -2174,15 +2174,16 @@ IXGBE_MII_AUTONEG_REG	ixgbe_type.h	1561;"	d
 IXGBE_MII_AUTONEG_VENDOR_PROVISION_1_REG	ixgbe_type.h	1548;"	d
 IXGBE_MII_AUTONEG_XNP_TX_REG	ixgbe_type.h	1549;"	d
 IXGBE_MII_RESTART	ixgbe_type.h	1558;"	d
-IXGBE_MIN_ATR_SAMPLE_RATE	ixgbe_param.c	297;"	d	file:
+IXGBE_MIN_ATR_SAMPLE_RATE	ixgbe_param.c	299;"	d	file:
 IXGBE_MIN_EITR	ixgbe_type.h	283;"	d
 IXGBE_MIN_FCPAUSE	ixgbe.h	104;"	d
 IXGBE_MIN_FCRTH	ixgbe.h	101;"	d
 IXGBE_MIN_FCRTL	ixgbe.h	99;"	d
 IXGBE_MIN_INT_RATE	ixgbe_type.h	281;"	d
-IXGBE_MIN_RSC_ITR	ixgbe.h	855;"	d
+IXGBE_MIN_RSC_ITR	ixgbe.h	866;"	d
 IXGBE_MIN_RXD	ixgbe.h	94;"	d
 IXGBE_MIN_TXD	ixgbe.h	89;"	d
+IXGBE_MIN_WRR_CREDIT	ixgbe.h	257;"	d
 IXGBE_MIPAF	ixgbe_type.h	979;"	d
 IXGBE_MISC_REG_82599	ixgbe_type.h	1119;"	d
 IXGBE_MLADD	ixgbe_type.h	1249;"	d
@@ -2696,8 +2697,8 @@ IXGBE_RSS_2Q_MASK	ixgbe_lib.c	331;"	d	file:
 IXGBE_RSS_4Q_MASK	ixgbe_lib.c	330;"	d	file:
 IXGBE_RSS_8Q_MASK	ixgbe_lib.c	329;"	d	file:
 IXGBE_RSS_DISABLED_MASK	ixgbe_lib.c	332;"	d	file:
-IXGBE_RSS_KEY_SIZE	ixgbe.h	1217;"	d
-IXGBE_RSS_L4_TYPES_MASK	ixgbe_main.c	1231;"	d	file:
+IXGBE_RSS_KEY_SIZE	ixgbe.h	1232;"	d
+IXGBE_RSS_L4_TYPES_MASK	ixgbe_main.c	1232;"	d	file:
 IXGBE_RT2CR	ixgbe_type.h	624;"	d
 IXGBE_RT2CR_LSP	ixgbe_dcb_82598.h	40;"	d
 IXGBE_RT2CR_MCL_SHIFT	ixgbe_dcb_82598.h	39;"	d
@@ -2955,7 +2956,7 @@ IXGBE_RXSTMPL	ixgbe_type.h	1142;"	d
 IXGBE_RXUSED	ixgbe_type.h	1213;"	d
 IXGBE_RXWRPTR	ixgbe_type.h	1212;"	d
 IXGBE_RX_BUFFER_WRITE	ixgbe.h	127;"	d
-IXGBE_RX_DESC	ixgbe.h	897;"	d
+IXGBE_RX_DESC	ixgbe.h	908;"	d
 IXGBE_RX_DESC_SPECIAL_PRI_MASK	ixgbe_type.h	2752;"	d
 IXGBE_RX_DESC_SPECIAL_PRI_SHIFT	ixgbe_type.h	2753;"	d
 IXGBE_RX_DESC_SPECIAL_VLAN_MASK	ixgbe_type.h	2751;"	d
@@ -3012,7 +3013,7 @@ IXGBE_SECTXSTAT_SECTX_RDY	ixgbe_type.h	695;"	d
 IXGBE_SECTX_DCB	ixgbe_dcb_82599.h	89;"	d
 IXGBE_SERDESC	ixgbe_type.h	1257;"	d
 IXGBE_SERIAL_NUMBER_MAC_ADDR	ixgbe_type.h	2257;"	d
-IXGBE_SET_FLAG	ixgbe_main.c	8324;"	d	file:
+IXGBE_SET_FLAG	ixgbe_main.c	8427;"	d	file:
 IXGBE_SFF_10GBASELR_CAPABLE	ixgbe_phy.h	65;"	d
 IXGBE_SFF_10GBASESR_CAPABLE	ixgbe_phy.h	64;"	d
 IXGBE_SFF_10GBE_COMP_CODES	ixgbe_phy.h	40;"	d
@@ -3061,7 +3062,7 @@ IXGBE_SFF_VENDOR_OUI_INTEL	ixgbe_phy.h	124;"	d
 IXGBE_SFF_VENDOR_OUI_TYCO	ixgbe_phy.h	121;"	d
 IXGBE_SFP_DETECT_RETRIES	ixgbe_osdep.h	75;"	d
 IXGBE_SFP_DETECT_RETRIES	ixgbe_phy.h	139;"	d
-IXGBE_SFP_POLL_JIFFIES	ixgbe.h	948;"	d
+IXGBE_SFP_POLL_JIFFIES	ixgbe.h	959;"	d
 IXGBE_SGMIIC	ixgbe_type.h	1277;"	d
 IXGBE_SHADOW_RAM_SIZE_X550	ixgbe_type.h	2231;"	d
 IXGBE_SMADARCTL	ixgbe_type.h	1275;"	d
@@ -3204,7 +3205,7 @@ IXGBE_TRGTTIMH0	ixgbe_type.h	1157;"	d
 IXGBE_TRGTTIMH1	ixgbe_type.h	1159;"	d
 IXGBE_TRGTTIML0	ixgbe_type.h	1156;"	d
 IXGBE_TRGTTIML1	ixgbe_type.h	1158;"	d
-IXGBE_TRY_LINK_TIMEOUT	ixgbe.h	947;"	d
+IXGBE_TRY_LINK_TIMEOUT	ixgbe.h	958;"	d
 IXGBE_TSAUXC	ixgbe_type.h	1155;"	d
 IXGBE_TSAUXC_DISABLE_SYSTIME	ixgbe_type.h	2460;"	d
 IXGBE_TSAUXC_EN_CLK	ixgbe_type.h	2454;"	d
@@ -3240,7 +3241,7 @@ IXGBE_TSYNCRXCTL_VALID	ixgbe_type.h	2469;"	d
 IXGBE_TSYNCTXCTL	ixgbe_type.h	1141;"	d
 IXGBE_TSYNCTXCTL_ENABLED	ixgbe_type.h	2467;"	d
 IXGBE_TSYNCTXCTL_VALID	ixgbe_type.h	2466;"	d
-IXGBE_TS_HDR_LEN	ixgbe.h	501;"	d
+IXGBE_TS_HDR_LEN	ixgbe.h	505;"	d
 IXGBE_TWINAX_DEV	ixgbe_type.h	1450;"	d
 IXGBE_TXBUFCTRL	ixgbe_type.h	1186;"	d
 IXGBE_TXBUFDATA0	ixgbe_type.h	1187;"	d
@@ -3288,8 +3289,8 @@ IXGBE_TXSTMPH	ixgbe_type.h	1148;"	d
 IXGBE_TXSTMPL	ixgbe_type.h	1147;"	d
 IXGBE_TXUSED	ixgbe_type.h	1217;"	d
 IXGBE_TXWRPTR	ixgbe_type.h	1216;"	d
-IXGBE_TX_CTXTDESC	ixgbe.h	901;"	d
-IXGBE_TX_DESC	ixgbe.h	899;"	d
+IXGBE_TX_CTXTDESC	ixgbe.h	912;"	d
+IXGBE_TX_DESC	ixgbe.h	910;"	d
 IXGBE_TX_DESC_SPECIAL_PRI_SHIFT	ixgbe_type.h	2754;"	d
 IXGBE_TX_FLAGS_CC	ixgbe.h	/^	IXGBE_TX_FLAGS_CC	= 0x08,$/;"	e	enum:ixgbe_tx_flags
 IXGBE_TX_FLAGS_CSUM	ixgbe.h	/^	IXGBE_TX_FLAGS_CSUM	= 0x20,$/;"	e	enum:ixgbe_tx_flags
@@ -3303,11 +3304,11 @@ IXGBE_TX_FLAGS_VLAN_MASK	ixgbe.h	155;"	d
 IXGBE_TX_FLAGS_VLAN_PRIO_MASK	ixgbe.h	156;"	d
 IXGBE_TX_FLAGS_VLAN_PRIO_SHIFT	ixgbe.h	157;"	d
 IXGBE_TX_FLAGS_VLAN_SHIFT	ixgbe.h	158;"	d
-IXGBE_TX_HDR	ixgbe.h	633;"	d
-IXGBE_TX_HDR_OFFSET	ixgbe.h	636;"	d
+IXGBE_TX_HDR	ixgbe.h	644;"	d
+IXGBE_TX_HDR_OFFSET	ixgbe.h	647;"	d
 IXGBE_TX_PAD_ENABLE	ixgbe_type.h	2437;"	d
-IXGBE_TX_PKT	ixgbe.h	628;"	d
-IXGBE_TX_PKT_OFFSET	ixgbe.h	631;"	d
+IXGBE_TX_PKT	ixgbe.h	639;"	d
+IXGBE_TX_PKT_OFFSET	ixgbe.h	642;"	d
 IXGBE_UTA	ixgbe_type.h	409;"	d
 IXGBE_VALIDATE_LINK_READY_TIMEOUT	ixgbe_type.h	1302;"	d
 IXGBE_VFLRE	ixgbe_type.h	2759;"	d
@@ -3497,7 +3498,7 @@ KVER	common.mk	/^KVER := $(shell ${CC} ${EXTRA_CFLAGS} -E -dM ${VERSION_FILE} | 
 KVER_CODE	common.mk	/^  KVER_CODE := $(shell ${CC} ${EXTRA_CFLAGS} -E -dM ${VSP} 2> \/dev\/null |\\$/;"	m
 KVER_CODE	common.mk	/^  KVER_CODE := ${LINUX_VERSION_CODE}$/;"	m
 LINUX_VERSION_CODE	common.mk	/^  LINUX_VERSION_CODE=$(call get_kvercode,$(call get_kver,${LINUX_VERSION},1),$(call get_kver,${LINUX_VERSION},2),$(call get_kver,${LINUX_VERSION},3))$/;"	m
-LIST_LEN	ixgbe_param.c	465;"	d	file:
+LIST_LEN	ixgbe_param.c	467;"	d	file:
 LPA_1000LOCALRXOK	kcompat.h	1800;"	d
 LPA_1000REMRXOK	kcompat.h	1801;"	d
 LPA_PAUSE_ASYM	kcompat.h	1795;"	d
@@ -3510,24 +3511,24 @@ MANPATH	common.mk	/^  MANPATH := $(shell (manpath 2>\/dev\/null || echo $MANPATH
 MANSECTION	common.mk	/^MANSECTION = 7$/;"	m
 MAXIMUM_ETHERNET_VLAN_SIZE	ixgbe.h	124;"	d
 MAX_EMULATION_MAC_ADDRS	ixgbe.h	165;"	d
-MAX_ITR	ixgbe_param.c	205;"	d	file:
-MAX_LLIETYPE	ixgbe_param.c	255;"	d	file:
-MAX_LLIPORT	ixgbe_param.c	219;"	d	file:
-MAX_LLIPUSH	ixgbe_param.c	231;"	d	file:
-MAX_LLISIZE	ixgbe_param.c	243;"	d	file:
-MAX_LLIVLANP	ixgbe_param.c	267;"	d	file:
-MAX_MSIX_COUNT	ixgbe.h	941;"	d
-MAX_MSIX_Q_VECTORS	ixgbe.h	940;"	d
+MAX_ITR	ixgbe_param.c	207;"	d	file:
+MAX_LLIETYPE	ixgbe_param.c	257;"	d	file:
+MAX_LLIPORT	ixgbe_param.c	221;"	d	file:
+MAX_LLIPUSH	ixgbe_param.c	233;"	d	file:
+MAX_LLISIZE	ixgbe_param.c	245;"	d	file:
+MAX_LLIVLANP	ixgbe_param.c	269;"	d	file:
+MAX_MSIX_COUNT	ixgbe.h	952;"	d
+MAX_MSIX_Q_VECTORS	ixgbe.h	951;"	d
 MAX_NUMNODES	kcompat.h	1427;"	d
 MAX_NUMNODES	kcompat.h	1429;"	d
-MAX_RX_PACKET_BUFFERS	ixgbe.h	717;"	d
-MAX_RX_QUEUES	ixgbe.h	658;"	d
-MAX_RX_QUEUES	ixgbe.h	661;"	d
-MAX_SRIOV_VFS	ixgbe_param.c	173;"	d	file:
+MAX_RX_PACKET_BUFFERS	ixgbe.h	728;"	d
+MAX_RX_QUEUES	ixgbe.h	669;"	d
+MAX_RX_QUEUES	ixgbe.h	672;"	d
+MAX_SRIOV_VFS	ixgbe_param.c	175;"	d	file:
 MAX_TIMADJ	ixgbe_ptp.c	161;"	d	file:
-MAX_TX_PACKET_BUFFERS	ixgbe.h	719;"	d
-MAX_TX_QUEUES	ixgbe.h	659;"	d
-MAX_TX_QUEUES	ixgbe.h	662;"	d
+MAX_TX_PACKET_BUFFERS	ixgbe.h	730;"	d
+MAX_TX_QUEUES	ixgbe.h	670;"	d
+MAX_TX_QUEUES	ixgbe.h	673;"	d
 MDIO_EEE_1000KX	kcompat.h	3944;"	d
 MDIO_EEE_1000T	kcompat.h	3938;"	d
 MDIO_EEE_100TX	kcompat.h	3935;"	d
@@ -3547,14 +3548,14 @@ MII_PHYSID1	kcompat.h	883;"	d
 MII_PHYSID2	kcompat.h	884;"	d
 MII_RESV1	kcompat.h	242;"	d
 MII_STAT1000	kcompat.h	1789;"	d
-MIN_ITR	ixgbe_param.c	206;"	d	file:
-MIN_LLIETYPE	ixgbe_param.c	256;"	d	file:
-MIN_LLIPORT	ixgbe_param.c	220;"	d	file:
-MIN_LLIPUSH	ixgbe_param.c	232;"	d	file:
-MIN_LLISIZE	ixgbe_param.c	244;"	d	file:
-MIN_LLIVLANP	ixgbe_param.c	268;"	d	file:
-MIN_MSIX_COUNT	ixgbe.h	944;"	d
-MIN_MSIX_Q_VECTORS	ixgbe.h	943;"	d
+MIN_ITR	ixgbe_param.c	208;"	d	file:
+MIN_LLIETYPE	ixgbe_param.c	258;"	d	file:
+MIN_LLIPORT	ixgbe_param.c	222;"	d	file:
+MIN_LLIPUSH	ixgbe_param.c	234;"	d	file:
+MIN_LLISIZE	ixgbe_param.c	246;"	d	file:
+MIN_LLIVLANP	ixgbe_param.c	270;"	d	file:
+MIN_MSIX_COUNT	ixgbe.h	955;"	d
+MIN_MSIX_Q_VECTORS	ixgbe.h	954;"	d
 MODULE_INFO	kcompat.h	1401;"	d
 MODULE_LICENSE	kcompat.h	951;"	d
 MODULE_VERSION	kcompat.h	1506;"	d
@@ -3610,7 +3611,7 @@ NET_SKB_PAD	kcompat.h	3324;"	d
 NET_SKB_PAD	kcompat.h	3328;"	d
 NET_SKB_PAD	kcompat.h	3330;"	d
 NEWER_PM	kcompat.h	2608;"	d
-NON_Q_VECTORS	ixgbe.h	912;"	d
+NON_Q_VECTORS	ixgbe.h	923;"	d
 NO_PTP_SUPPORT	kcompat.h	2772;"	d
 NSEC_PER_SEC	kcompat.h	1485;"	d
 NUMTCS_RETURNS_U8	kcompat.h	3875;"	d
@@ -3621,7 +3622,7 @@ NVM_INIT_CTRL_3_LPLU	ixgbe_type.h	2295;"	d
 OPTION_DISABLED	ixgbe_param.c	37;"	d	file:
 OPTION_ENABLED	ixgbe_param.c	38;"	d	file:
 OPTION_UNSET	ixgbe_param.c	36;"	d	file:
-OTHER_VECTOR	ixgbe.h	911;"	d
+OTHER_VECTOR	ixgbe.h	922;"	d
 PATTERN_TEST	ixgbe_ethtool.c	1405;"	d	file:
 PBA_STRATEGY_EQUAL	ixgbe_type.h	/^	PBA_STRATEGY_EQUAL	= 0, \/* Distribute PB space equally *\/$/;"	e	enum:__anon11
 PBA_STRATEGY_EQUAL	ixgbe_type.h	1640;"	d
@@ -3771,15 +3772,15 @@ SYSTEM_MAP_FILE	common.mk	/^  SYSTEM_MAP_FILE := $(firstword ${MSP})$/;"	m
 TABLE32_TEST	ixgbe_ethtool.c	1408;"	d	file:
 TABLE64_TEST_HI	ixgbe_ethtool.c	1410;"	d	file:
 TABLE64_TEST_LO	ixgbe_ethtool.c	1409;"	d	file:
-TCP_TIMER_VECTOR	ixgbe.h	910;"	d
+TCP_TIMER_VECTOR	ixgbe.h	921;"	d
 TC_BITMASK	kcompat.h	3525;"	d
 TN1010_PHY_ID	ixgbe_type.h	1567;"	d
 TNX_FW_REV	ixgbe_type.h	1568;"	d
 TRUE	kcompat.h	120;"	d
 TRUE	kcompat.h	122;"	d
 TXD_USE_COUNT	ixgbe.h	247;"	d
-TX_TIMEO_LIMIT	ixgbe_main.c	744;"	d	file:
-TX_WAKE_THRESHOLD	ixgbe_main.c	1063;"	d	file:
+TX_TIMEO_LIMIT	ixgbe_main.c	745;"	d	file:
+TX_WAKE_THRESHOLD	ixgbe_main.c	1064;"	d	file:
 U32_MAX	kcompat.h	4440;"	d
 UBUNTU_VERSION	kcompat.h	783;"	d
 UBUNTU_VERSION_CODE	kcompat.h	753;"	d
@@ -3801,7 +3802,7 @@ USE_REBOOT_NOTIFIER	kcompat.h	1785;"	d
 UTS_UBUNTU_RELEASE_ABI	kcompat.h	752;"	d
 UTS_UBUNTU_RELEASE_ABI	kcompat.h	773;"	d
 VERSION_FILE	common.mk	/^  VERSION_FILE := $(firstword ${VSP})$/;"	m
-VFTA_BLOCK_SIZE	ixgbe_main.c	4308;"	d	file:
+VFTA_BLOCK_SIZE	ixgbe_main.c	4395;"	d	file:
 VLAN_ETH_FRAME_LEN	kcompat.h	292;"	d
 VLAN_ETH_HLEN	kcompat.h	288;"	d
 VLAN_HLEN	kcompat.h	284;"	d
@@ -4226,7 +4227,7 @@ caution_thresh	ixgbe_type.h	/^	u8 caution_thresh;$/;"	m	struct:ixgbe_thermal_dio
 check_for_ack	ixgbe_type.h	/^	s32  (*check_for_ack)(struct ixgbe_hw *, u16);$/;"	m	struct:ixgbe_mbx_operations
 check_for_msg	ixgbe_type.h	/^	s32  (*check_for_msg)(struct ixgbe_hw *, u16);$/;"	m	struct:ixgbe_mbx_operations
 check_for_rst	ixgbe_type.h	/^	s32  (*check_for_rst)(struct ixgbe_hw *, u16);$/;"	m	struct:ixgbe_mbx_operations
-check_for_tx_hang	ixgbe.h	514;"	d
+check_for_tx_hang	ixgbe.h	518;"	d
 check_link	ixgbe_type.h	/^	s32 (*check_link)(struct ixgbe_hw *, ixgbe_link_speed *, bool *);$/;"	m	struct:ixgbe_phy_operations
 check_link	ixgbe_type.h	/^	s32 (*check_link)(struct ixgbe_hw *, ixgbe_link_speed *, bool *, bool);$/;"	m	struct:ixgbe_mac_operations
 check_overtemp	ixgbe_type.h	/^	s32 (*check_overtemp)(struct ixgbe_hw *);$/;"	m	struct:ixgbe_phy_operations
@@ -4235,10 +4236,10 @@ checksum	ixgbe_type.h	/^	u8 checksum;$/;"	m	struct:ixgbe_hic_hdr2_req
 checksum	ixgbe_type.h	/^	u8 checksum;$/;"	m	struct:ixgbe_hic_hdr2_rsp
 clamp_t	kcompat.h	2565;"	d
 cleaned	ixgbe.h	/^	u64 cleaned;$/;"	m	struct:ixgbe_queue_stats
-clear_check_for_tx_hang	ixgbe.h	518;"	d
+clear_check_for_tx_hang	ixgbe.h	522;"	d
 clear_hw_cntrs	ixgbe_type.h	/^	s32 (*clear_hw_cntrs)(struct ixgbe_hw *);$/;"	m	struct:ixgbe_mac_operations
 clear_rar	ixgbe_type.h	/^	s32 (*clear_rar)(struct ixgbe_hw *, u32);$/;"	m	struct:ixgbe_mac_operations
-clear_ring_rsc_enabled	ixgbe.h	524;"	d
+clear_ring_rsc_enabled	ixgbe.h	528;"	d
 clear_to_send	ixgbe.h	/^	bool clear_to_send;$/;"	m	struct:vf_data_storage
 clear_vfta	ixgbe_type.h	/^	s32 (*clear_vfta)(struct ixgbe_hw *);$/;"	m	struct:ixgbe_mac_operations
 clear_vmdq	ixgbe_type.h	/^	s32 (*clear_vmdq)(struct ixgbe_hw *, u32, u32);$/;"	m	struct:ixgbe_mac_operations
@@ -5186,7 +5187,7 @@ ixgbe_flap_tx_laser_multispeed_fiber	ixgbe_82599.c	/^void ixgbe_flap_tx_laser_mu
 ixgbe_flash	ixgbe_type.h	/^	ixgbe_flash,$/;"	e	enum:ixgbe_eeprom_type
 ixgbe_flowspec_to_flow_type	ixgbe_ethtool.c	/^static int ixgbe_flowspec_to_flow_type(struct ethtool_rx_flow_spec *fsp,$/;"	f	file:
 ixgbe_flush_sw_mac_table	ixgbe_main.c	/^static void ixgbe_flush_sw_mac_table(struct ixgbe_adapter *adapter)$/;"	f	file:
-ixgbe_for_each_ring	ixgbe.h	714;"	d
+ixgbe_for_each_ring	ixgbe.h	725;"	d
 ixgbe_free_all_rx_resources	ixgbe_main.c	/^static void ixgbe_free_all_rx_resources(struct ixgbe_adapter *adapter)$/;"	f	file:
 ixgbe_free_all_tx_resources	ixgbe_main.c	/^static void ixgbe_free_all_tx_resources(struct ixgbe_adapter *adapter)$/;"	f	file:
 ixgbe_free_desc_rings	ixgbe_ethtool.c	/^static void ixgbe_free_desc_rings(struct ixgbe_adapter *adapter)$/;"	f	file:
@@ -5726,7 +5727,7 @@ ixgbe_rx_desc_queue_enable	ixgbe_main.c	/^static void ixgbe_rx_desc_queue_enable
 ixgbe_rx_hash	ixgbe_main.c	/^static inline void ixgbe_rx_hash(struct ixgbe_ring *ring,$/;"	f	file:
 ixgbe_rx_is_fcoe	ixgbe_main.c	/^static inline bool ixgbe_rx_is_fcoe(struct ixgbe_ring *ring,$/;"	f	file:
 ixgbe_rx_pg_order	ixgbe.h	/^static inline unsigned int ixgbe_rx_pg_order(struct ixgbe_ring __maybe_unused *ring)$/;"	f
-ixgbe_rx_pg_size	ixgbe.h	702;"	d
+ixgbe_rx_pg_size	ixgbe.h	713;"	d
 ixgbe_rx_queue_stats	ixgbe.h	/^struct ixgbe_rx_queue_stats {$/;"	s
 ixgbe_rx_skb	ixgbe_main.c	/^static void ixgbe_rx_skb(struct ixgbe_q_vector *q_vector,$/;"	f	file:
 ixgbe_rx_vlan	ixgbe_main.c	/^static void ixgbe_rx_vlan(struct ixgbe_ring *ring,$/;"	f	file:
@@ -5806,6 +5807,7 @@ ixgbe_set_source_address_pruning	ixgbe_api.c	/^void ixgbe_set_source_address_pru
 ixgbe_set_source_address_pruning_X550	ixgbe_x550.c	/^void ixgbe_set_source_address_pruning_X550(struct ixgbe_hw *hw, bool enable,$/;"	f
 ixgbe_set_tso	ixgbe_ethtool.c	/^static int ixgbe_set_tso(struct net_device *netdev, u32 data)$/;"	f	file:
 ixgbe_set_tx_csum	ixgbe_ethtool.c	/^static int ixgbe_set_tx_csum(struct net_device *netdev, u32 data)$/;"	f	file:
+ixgbe_set_tx_weight	ixgbe_main.c	/^ixgbe_set_tx_weight(struct net_device *netdev, int queue_index, u32 weight)$/;"	f	file:
 ixgbe_set_txq_credits	ixgbe_main.c	/^static void ixgbe_set_txq_credits(struct ixgbe_hw *hw, int txq_i, u16 refill)$/;"	f	file:
 ixgbe_set_vf_lpe	ixgbe_sriov.c	/^static int ixgbe_set_vf_lpe(struct ixgbe_adapter *adapter, u32 max_frame, u32 vf)$/;"	f	file:
 ixgbe_set_vf_mac	ixgbe_sriov.c	/^int ixgbe_set_vf_mac(struct ixgbe_adapter *adapter,$/;"	f
@@ -6278,6 +6280,7 @@ napi_to_poll_dev	kcompat.c	/^struct net_device *napi_to_poll_dev(const struct na
 ndo_dflt_fdb_add	kcompat.h	4364;"	d
 ndo_dflt_fdb_del	kcompat.h	4365;"	d
 need_crosstalk_fix	ixgbe.h	/^	bool need_crosstalk_fix;$/;"	m	struct:ixgbe_adapter
+needs_tail_update	ixgbe.h	/^	u8 needs_tail_update; \/* Used in case skb->xmit_more is spread across$/;"	m	struct:ixgbe_ring
 net_stats	ixgbe.h	/^	struct net_device_stats net_stats;$/;"	m	struct:ixgbe_adapter	typeref:struct:ixgbe_adapter::net_device_stats
 netdev	ixgbe.h	/^	struct net_device *netdev;	\/* netdev ring belongs to *\/$/;"	m	struct:ixgbe_ring	typeref:struct:ixgbe_ring::net_device
 netdev	ixgbe.h	/^	struct net_device *netdev;$/;"	m	struct:ixgbe_adapter	typeref:struct:ixgbe_adapter::net_device
@@ -6318,10 +6321,11 @@ netdev_printk	kcompat.h	3095;"	d
 netdev_printk	kcompat.h	3101;"	d
 netdev_printk	kcompat.h	3109;"	d
 netdev_priv	kcompat.h	1228;"	d
+netdev_queue_index	ixgbe.h	/^	u8 netdev_queue_index; \/* needed for lying to the OS about the number of TX queues *\/$/;"	m	struct:ixgbe_ring
 netdev_registered	ixgbe.h	/^	bool netdev_registered;$/;"	m	struct:ixgbe_adapter
 netdev_reset_queue	kcompat.h	3832;"	d
 netdev_reset_tc	kcompat.h	3558;"	d
-netdev_ring	ixgbe.h	526;"	d
+netdev_ring	ixgbe.h	530;"	d
 netdev_rss_key_fill	kcompat.h	4720;"	d
 netdev_sent_queue	kcompat.h	3830;"	d
 netdev_set_num_tc	kcompat.h	3557;"	d
@@ -6439,7 +6443,9 @@ num_rx_queues	ixgbe.h	/^	int num_rx_queues;$/;"	m	struct:ixgbe_adapter
 num_rx_queues_per_pool	ixgbe.h	/^	int num_rx_queues_per_pool;$/;"	m	struct:ixgbe_adapter
 num_tcs	ixgbe_dcb.h	/^	struct ixgbe_dcb_num_tcs num_tcs;$/;"	m	struct:ixgbe_dcb_config	typeref:struct:ixgbe_dcb_config::ixgbe_dcb_num_tcs
 num_tcs	ixgbe_type.h	/^	u8	num_tcs;$/;"	m	struct:ixgbe_dmac_config
+num_tx_pools	ixgbe.h	/^	int num_tx_pools;$/;"	m	struct:ixgbe_adapter
 num_tx_queues	ixgbe.h	/^	int num_tx_queues;$/;"	m	struct:ixgbe_adapter
+num_tx_queues_per_pool	ixgbe.h	/^	int num_tx_queues_per_pool;$/;"	m	struct:ixgbe_adapter
 num_vf_mc_hashes	ixgbe.h	/^	u16 num_vf_mc_hashes;$/;"	m	struct:vf_data_storage
 num_vfs	ixgbe.h	/^	unsigned int num_vfs;$/;"	m	struct:ixgbe_adapter
 numa_mem_id	kcompat.h	3273;"	d
@@ -6732,8 +6738,8 @@ rfc	ixgbe_type.h	/^	u64 rfc;$/;"	m	struct:ixgbe_hw_stats
 ring	ixgbe.h	/^	struct ixgbe_ring *ring;	\/* pointer to linked list of rings *\/$/;"	m	struct:ixgbe_ring_container	typeref:struct:ixgbe_ring_container::ixgbe_ring
 ring_cookie	kcompat.h	/^	__u64		ring_cookie;$/;"	m	struct:_kc_ethtool_rx_flow_spec
 ring_feature	ixgbe.h	/^	struct ixgbe_ring_feature ring_feature[RING_F_ARRAY_SIZE];$/;"	m	struct:ixgbe_adapter	typeref:struct:ixgbe_adapter::ixgbe_ring_feature
-ring_is_rsc_enabled	ixgbe.h	520;"	d
-ring_queue_index	ixgbe.h	527;"	d
+ring_is_rsc_enabled	ixgbe.h	524;"	d
+ring_queue_index	ixgbe.h	535;"	d
 rjc	ixgbe_type.h	/^	u64 rjc;$/;"	m	struct:ixgbe_hw_stats
 rlec	ixgbe_type.h	/^	u64 rlec;$/;"	m	struct:ixgbe_hw_stats
 rnbc	ixgbe_type.h	/^	u64 rnbc[8];$/;"	m	struct:ixgbe_hw_stats
@@ -6795,7 +6801,7 @@ sensor_data	ixgbe.h	/^	struct ixgbe_thermal_diode_data *sensor_data;$/;"	m	struc
 seqnum_seed	ixgbe_type.h	/^	__le32 seqnum_seed;$/;"	m	struct:ixgbe_adv_tx_context_desc
 service_task	ixgbe.h	/^	struct work_struct service_task;$/;"	m	struct:ixgbe_adapter	typeref:struct:ixgbe_adapter::work_struct
 service_timer	ixgbe.h	/^	struct timer_list service_timer;$/;"	m	struct:ixgbe_adapter	typeref:struct:ixgbe_adapter::timer_list
-set_check_for_tx_hang	ixgbe.h	516;"	d
+set_check_for_tx_hang	ixgbe.h	520;"	d
 set_coalesce	kcompat_ethtool.c	/^	int  (*set_coalesce)(struct net_device *, struct ethtool_coalesce *);$/;"	m	struct:_kc_ethtool_ops	file:
 set_dev_node	kcompat.h	2147;"	d
 set_dev_node	kcompat.h	2149;"	d
@@ -6811,7 +6817,7 @@ set_pauseparam	kcompat_ethtool.c	/^	int  (*set_pauseparam)(struct net_device *,$
 set_phy_power	ixgbe_type.h	/^	s32 (*set_phy_power)(struct ixgbe_hw *, bool on);$/;"	m	struct:ixgbe_phy_operations
 set_rar	ixgbe_type.h	/^	s32 (*set_rar)(struct ixgbe_hw *, u32, u8 *, u32, u32);$/;"	m	struct:ixgbe_mac_operations
 set_rate_select_speed	ixgbe_type.h	/^	void (*set_rate_select_speed)(struct ixgbe_hw *, ixgbe_link_speed);$/;"	m	struct:ixgbe_mac_operations
-set_ring_rsc_enabled	ixgbe.h	522;"	d
+set_ring_rsc_enabled	ixgbe.h	526;"	d
 set_ringparam	kcompat_ethtool.c	/^	int  (*set_ringparam)(struct net_device *, struct ethtool_ringparam *);$/;"	m	struct:_kc_ethtool_ops	file:
 set_rx_csum	kcompat_ethtool.c	/^	int  (*set_rx_csum)(struct net_device *, u32);$/;"	m	struct:_kc_ethtool_ops	file:
 set_san_mac_addr	ixgbe_type.h	/^	s32 (*set_san_mac_addr)(struct ixgbe_hw *, u8 *);$/;"	m	struct:ixgbe_mac_operations
@@ -7027,6 +7033,7 @@ tx_max_coalesced_frames_low	kcompat.h	/^	u32	tx_max_coalesced_frames_low;$/;"	m	
 tx_max_pending	kcompat.h	/^	u32	tx_max_pending;$/;"	m	struct:_kc_ethtool_ringparam
 tx_pause	kcompat.h	/^	u32	tx_pause;$/;"	m	struct:_kc_ethtool_pauseparam
 tx_pending	kcompat.h	/^	u32	tx_pending;$/;"	m	struct:_kc_ethtool_ringparam
+tx_queue_shift	ixgbe.h	/^	int tx_queue_shift;$/;"	m	struct:ixgbe_adapter
 tx_rate	ixgbe.h	/^	u16 tx_rate;$/;"	m	struct:vf_data_storage
 tx_ring_count	ixgbe.h	/^	unsigned int tx_ring_count;$/;"	m	struct:ixgbe_adapter
 tx_stats	ixgbe.h	/^		struct ixgbe_tx_queue_stats tx_stats;$/;"	m	union:ixgbe_ring::__anon5	typeref:struct:ixgbe_ring::__anon5::ixgbe_tx_queue_stats
@@ -7065,6 +7072,7 @@ upper	ixgbe_type.h	/^	} upper;$/;"	m	struct:ixgbe_legacy_tx_desc	typeref:union:i
 use_adaptive_rx_coalesce	kcompat.h	/^	u32	use_adaptive_rx_coalesce;$/;"	m	struct:_kc_ethtool_coalesce
 use_adaptive_tx_coalesce	kcompat.h	/^	u32	use_adaptive_tx_coalesce;$/;"	m	struct:_kc_ethtool_coalesce
 use_pkt_ring	ixgbe.h	/^        bool use_pkt_ring;$/;"	m	struct:ixgbe_adapter
+use_pool_queues	ixgbe.h	/^        bool use_pool_queues;$/;"	m	struct:ixgbe_adapter
 use_sgseg	ixgbe.h	/^        bool use_sgseg;$/;"	m	struct:ixgbe_adapter
 usec_delay	ixgbe_osdep.h	47;"	d
 usec_delay	ixgbe_type.h	/^	u32 usec_delay;$/;"	m	struct:ixgbe_mbx_info

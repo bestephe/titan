@@ -1672,6 +1672,8 @@ struct net_device {
 
 #ifdef CONFIG_DQA
 	unsigned char		dqa_alg;
+	/* XXX: This should be part of priv_flags. */
+	unsigned char		segment_sharedq;
 #endif
 
 	unsigned char		if_port;
@@ -3906,6 +3908,7 @@ static inline bool net_gso_ok(netdev_features_t features, int gso_type)
 static inline bool skb_gso_ok(struct sk_buff *skb, netdev_features_t features)
 {
 	return net_gso_ok(features, skb_shinfo(skb)->gso_type) &&
+	       !skb_force_seg(skb) &&
 	       (!skb_has_frag_list(skb) || (features & NETIF_F_FRAGLIST));
 }
 

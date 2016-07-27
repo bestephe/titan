@@ -423,6 +423,11 @@ sfq_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 
 	if (slot->qlen >= q->maxdepth) {
 congestion_drop:
+#ifdef CONFIG_DQA
+		/* XXX: DEBUG: I don't want packets being dropped. */
+		printk(KERN_ERR "sfq_enqueue: congestion drop!\n");
+#endif
+
 		if (!sfq_headdrop(q))
 			return qdisc_drop(skb, sch);
 

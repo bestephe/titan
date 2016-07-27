@@ -592,6 +592,7 @@ struct sk_buff {
 #ifdef CONFIG_DQA
 	int			queue_mapping_ver;
 	__u16			enq_cnt;
+	__u8			force_seg; /* XXX: should be a single bit flag */
 #endif
 	__u8			cloned:1,
 				nohdr:1,
@@ -3505,6 +3506,15 @@ static inline __sum16 gso_make_checksum(struct sk_buff *skb, __wsum res)
 	SKB_GSO_CB(skb)->csum_start -= plen;
 
 	return csum_fold(partial);
+}
+
+static inline bool skb_force_seg(const struct sk_buff *skb)
+{
+#ifdef CONFIG_DQA
+	return skb->force_seg;
+#else
+	return 0;
+#endif
 }
 
 static inline bool skb_is_gso(const struct sk_buff *skb)

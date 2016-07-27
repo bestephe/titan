@@ -333,6 +333,21 @@ static ssize_t dqa_alg_show(struct device *dev,
 	return sprintf(buf, "%s\n", dqa_algs[dqa_alg]);
 }
 static DEVICE_ATTR_RW(dqa_alg);
+
+static int change_segment_sharedq(struct net_device *dev, unsigned long new_val)
+{
+	dev->segment_sharedq = new_val;
+	return 0;
+}
+
+static ssize_t segment_sharedq_store(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t len)
+{
+	return netdev_store(dev, attr, buf, len, change_segment_sharedq);
+}
+NETDEVICE_SHOW_RW(segment_sharedq, fmt_dec);
+
 #endif /* CONFIG_DQA */
 
 static ssize_t carrier_changes_show(struct device *dev,
@@ -559,6 +574,7 @@ static struct attribute *net_class_attrs[] = {
 	&dev_attr_operstate.attr,
 #ifdef CONFIG_DQA
 	&dev_attr_dqa_alg.attr,
+	&dev_attr_segment_sharedq.attr,
 #endif
 	&dev_attr_carrier_changes.attr,
 	&dev_attr_ifalias.attr,
@@ -1252,6 +1268,37 @@ static struct netdev_queue_attribute dqa_sk_trace_reset_attribute =
 	__ATTR(sk_trace_reset, S_IRUGO | S_IWUSR, dqa_show_sk_trace_reset,
 	    dqa_set_sk_trace_reset);
 
+#if 0
+/* XXX: I decided this should be a per-dev, not per-queue attr */
+static ssize_t dqa_show_segment_sharedq(struct netdev_queue *queue,
+				        struct netdev_queue_attribute *attr,
+				        char *buf)
+{
+	return sprintf(buf, "%u\n", atomic_read(&queue->segment_sharedq));
+}
+
+static ssize_t dqa_set_segment_sharedq(struct netdev_queue *queue,
+				       struct netdev_queue_attribute *attribute,
+				       const char *buf, size_t len)
+{
+	unsigned int value;
+	int err;
+
+	err = kstrtouint(buf, 10, &value);
+	if (err < 0)
+		return err;
+
+	if (value)
+		queue->segment_sharedq = 1;
+
+	return len;
+}
+
+static struct netdev_queue_attribute dqa_segment_sharedq_attribute =
+	__ATTR(segment_sharedq, S_IRUGO | S_IWUSR, dqa_show_segment_sharedq,
+	    dqa_set_segment_sharedq);
+#endif
+
 static ssize_t dqa_show_enqcnt(struct netdev_queue *queue,
 			       struct netdev_queue_attribute *attr,
 			       char *buf)
@@ -1264,6 +1311,7 @@ static struct netdev_queue_attribute dqa_enqcnt_attribute =
 
 static struct attribute *dqa_attrs[] = {
 	&dqa_sk_trace_reset_attribute.attr,
+	//&dqa_set_segment_sharedq.attr,
 	&dqa_enqcnt_attribute.attr,
 	NULL
 };

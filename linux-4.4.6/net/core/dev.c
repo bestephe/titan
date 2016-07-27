@@ -2770,6 +2770,14 @@ static struct sk_buff *validate_xmit_skb(struct sk_buff *skb, struct net_device 
 	if (unlikely(!skb))
 		goto out_null;
 
+#if CONFIG_DQA
+	/* XXX: DEBUG */
+	//netdev_warn(dev, "validate_xmit_skb: netif_needs_gso(...): %d\n",
+	//	    netif_needs_gso(skb, features));
+
+	/* TODO: code may be needed here to implement segment_sharedq */
+#endif
+
 	if (netif_needs_gso(skb, features)) {
 		struct sk_buff *segs;
 
@@ -2837,6 +2845,7 @@ struct sk_buff *validate_xmit_skb_list(struct sk_buff *skb, struct net_device *d
 	return head;
 }
 
+/* Note: This function doesn't seem to work on skb lists. */
 static void qdisc_pkt_len_init(struct sk_buff *skb)
 {
 	const struct skb_shared_info *shinfo = skb_shinfo(skb);
@@ -2874,6 +2883,10 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 	spinlock_t *root_lock = qdisc_lock(q);
 	bool contended;
 	int rc;
+
+#ifdef CONFIG_DQA
+	/* NOTE: segmenting the skb's should happen before qdisc_pkt_len_init is called. */
+#endif
 
 	qdisc_pkt_len_init(skb);
 	qdisc_calculate_pkt_len(skb, q);
@@ -3493,6 +3506,11 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 	 * happens in some combination of __netdev_pick_tx(...) and
 	 * netdev_pick_tx(...).  I'm pretty sure the current implementation has
 	 * a bug if the device uses its own pick tx function. */
+
+	/* Segment the skb early if there are multiple sks using the txq */
+	/* XXX: In the overflowq case, it might be worth always segmenting
+	 * packets in the overflowq! */
+	/* TODO. */
 #endif
 
 #ifdef CONFIG_NET_CLS_ACT
@@ -3500,7 +3518,47 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 #endif
 	trace_net_dev_queue(skb);
 	if (q->enqueue) {
+#ifdef CONFIG_DQA
+		/* Segment the skb early if there are multiple sks using the
+		 * txq */
+		/* XXX: In the overflowq case, it might be worth always
+		 * segmenting packets in the overflowq! */
+		//if (dev->segment_sharedq) {
+		if (dev->segment_sharedq && atomic_read(&txq->tx_sk_enqcnt) > 1) {
+			/* XXX: DEBUG */
+			//netdev_warn(dev, "__dev_queue_xmit: forcing skb "
+			//	    "segmentation. orig len: %d\n", skb->len);
+
+			skb->force_seg = 1;
+			BUG_ON(skb->next);
+			skb = validate_xmit_skb(skb, dev);
+			if (!skb)
+				goto drop;
+
+			/* TODO: skb->xmit_more should be set for all of the
+			 * skb's that are not the lat one? */
+
+			while (skb) {
+				struct sk_buff *next = skb->next;
+
+				/* XXX: DEBUG */
+				//netdev_warn(dev, " seg skb (%p) len: %d\n",
+				//	    skb, skb->len);
+
+				skb->next = NULL;
+				/* XXX: BUG: This will ignore all but the last
+				 * rc.  However, at this moment, I'm not sure
+				 * what rc should be if sending one skb fails.
+				 * */
+				rc = __dev_xmit_skb(skb, q, dev, txq);
+				skb = next;
+			}
+		} else {
+			rc = __dev_xmit_skb(skb, q, dev, txq);
+		}
+#else
 		rc = __dev_xmit_skb(skb, q, dev, txq);
+#endif
 		goto out;
 	}
 

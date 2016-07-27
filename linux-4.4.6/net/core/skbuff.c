@@ -892,6 +892,8 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	/* By the same logic as setting the destructor to NULL in __skb_clone,
 	 * a cloned skb should not be considered as enqueued. */
 	new->enq_cnt = 0;
+
+	new->force_seg = 0;
 #endif
 
 	memcpy(&new->headers_start, &old->headers_start,
