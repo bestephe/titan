@@ -1975,16 +1975,38 @@ static inline void netdev_sk_enqcnt_trace(struct netdev_queue *txq,
  * TXQ enqcnt update functions
  */
 
+static inline void netdev_update_txq_weight(struct net_device *dev,
+					    int queue_index,
+					    int enqcnt)
+{
+	if (dev->netdev_ops->ndo_set_tx_weight) {
+		if (enqcnt > 1) {
+			dev->netdev_ops->ndo_set_tx_weight(dev, queue_index,
+							   enqcnt);
+		/* A queue should never have a weight smaller than 1. */
+		} else {
+			dev->netdev_ops->ndo_set_tx_weight(dev, queue_index, 1);
+		}
+	}
+}
+
 /* TODO: I feel like this function should take in as an argument the socket
  * that is being added. */
-static inline void netdev_sk_enqcnt_inc(struct netdev_queue *txq)
+static inline void netdev_sk_enqcnt_inc(struct net_device *dev, int queue_index)
 {
+	struct netdev_queue *txq = netdev_get_tx_queue(dev, queue_index);
 	int enqcnt;
 
-	/* XXX: Once I'm done debugging, This should just be an atomic_inc and
-	 * not an atomic_inc_return. */
 	//atomic_inc(&txq->tx_sk_enqcnt);
 	enqcnt = atomic_inc_return(&txq->tx_sk_enqcnt);
+
+	/* If the driver supports queue weights, set the queue weight
+	 * appropriately. */
+	/* Note: assumes that the txq weight is set appropriately already. */
+	/* XXX: I never actually set the inital txq weight in the kernel, so
+	 * this just relies on the driver to do it correclty. */
+	if (enqcnt > 1)
+		netdev_update_txq_weight(dev, queue_index, enqcnt);
 
 	/* XXX: DEBUG: trace the queue occupancy. */
 	netdev_sk_enqcnt_trace(txq, enqcnt);
@@ -1996,14 +2018,19 @@ static inline void netdev_sk_enqcnt_inc(struct netdev_queue *txq)
 
 /* TODO: I feel like this function should take in as an argument the socket
  * that is being removed. */
-static inline void netdev_sk_enqcnt_dec(struct netdev_queue *txq)
+static inline void netdev_sk_enqcnt_dec(struct net_device *dev, int queue_index)
 {
+	struct netdev_queue *txq = netdev_get_tx_queue(dev, queue_index);
 	int enqcnt;
 
-	/* XXX: Once I'm done debugging, This should just be an atomic_dec and
-	 * not an atomic_dec_return. */
 	//atomic_dec(&txq->tx_sk_enqcnt);
 	enqcnt = atomic_dec_return(&txq->tx_sk_enqcnt);
+
+	/* If the driver supports queue weights, set the queue weight
+	 * appropriately. */
+	/* Note: this tries to avoid unnecessarily updating the enqcnt. */
+	if (enqcnt > 0)
+		netdev_update_txq_weight(dev, queue_index, enqcnt);
 
 	/* XXX: DEBUG: trace the queue occupancy. */
 	netdev_sk_enqcnt_trace(txq, enqcnt);

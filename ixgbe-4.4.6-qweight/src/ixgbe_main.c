@@ -3117,7 +3117,7 @@ static void ixgbe_set_txq_credits(struct ixgbe_hw *hw, int txq_i, u16 refill)
 	IXGBE_WRITE_REG(hw, IXGBE_RTTDT1C, refill);
 
 	/* XXX: DEBUG */
-	ixgbe_get_txq_credits(hw, txq_i);
+	//ixgbe_get_txq_credits(hw, txq_i);
 }
 
 static void ixgbe_setup_mtqc_wrr(struct ixgbe_adapter *adapter)

@@ -638,9 +638,8 @@ fastpath:
 void skb_dequeue_from_sk(struct sk_buff *skb)
 {
 #ifdef CONFIG_DQA
-	struct netdev_queue *txq;
 	//int queue_mapping_ver;
-	bool slow;
+	//bool slow;
 
 	/* XXX: DEBUG */
 	//printk (KERN_ERR "skb_dequeue_from_sk: sk: %p, skb: %p\n",
@@ -701,8 +700,7 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 				 * sk_tx_test(...) and sk_tx_deq(...)? */
 
 				/* The tx queue also needs to be updated at the same time */
-				txq = netdev_get_tx_queue(skb->dev, skb->queue_mapping);
-				netdev_sk_enqcnt_dec(txq);
+				netdev_sk_enqcnt_dec(skb->dev, skb->queue_mapping);
 
 				//printk (KERN_ERR "skb_dequeue_from_sk: "
 				//	"dec txq-%d: now %d\n",

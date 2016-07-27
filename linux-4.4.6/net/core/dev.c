@@ -3269,7 +3269,6 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 #ifdef CONFIG_DQA
 			/* TODO: This DQA specific code should be in its own
 			 * function. */
-			struct netdev_queue *txq;
 
 			//bh_lock_sock(sk); /
 			//netdev_warn(dev, "__netdev_pick_tx: sock lock: %d\n",
@@ -3304,13 +3303,8 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 				 * poitner to the txq! I feel like the code in
 				 * this block could be refactored to somewhere
 				 * else.  netdev_sk_enqcnt_dec? */
-				txq = netdev_get_tx_queue(dev, queue_index);
 
-				/* XXX: skip decrementing the queue here?  I
-				 * don't think this will actually fix the race
-				 * condition thats going on, but it may stop
-				 * the off by one error. */
-				netdev_sk_enqcnt_dec(txq);
+				netdev_sk_enqcnt_dec(dev, queue_index);
 
 				//netdev_err(dev, "__netdev_pick_tx: "
 				//	"dec txq-%d: now %d\n",
@@ -3319,8 +3313,7 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 			}
 			
 			/* Update the count for the new queue */
-			txq = netdev_get_tx_queue(dev, new_index);
-			netdev_sk_enqcnt_inc(txq);
+			netdev_sk_enqcnt_inc(dev, new_index);
 
 			/* XXX: DEBUG */
 			//netdev_err(dev, "__netdev_pick_tx: "
