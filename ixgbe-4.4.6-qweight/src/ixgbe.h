@@ -534,7 +534,8 @@ enum ixgbe_ring_state_t {
 //#define ring_queue_index(ring) (ring->queue_index)
 #define ring_queue_index(ring) (ring->netdev_queue_index)
 
-#define IXGBE_MAX_BATCH_SIZE_STATS      (1024 * 256)
+//#define IXGBE_MAX_BATCH_SIZE_STATS      (1024 * 256)
+#define IXGBE_MAX_BATCH_SIZE_STATS	(1)
 
 struct ixgbe_ring {
 	struct ixgbe_ring *next;	/* pointer to next ring in q_vector */
@@ -666,11 +667,17 @@ enum ixgbe_ring_f_enum {
 #define IXGBE_MAX_FDIR_INDICES		63
 #if IS_ENABLED(CONFIG_FCOE)
 #define IXGBE_MAX_FCOE_INDICES	8
-#define MAX_RX_QUEUES	(IXGBE_MAX_FDIR_INDICES + IXGBE_MAX_FCOE_INDICES)
-#define MAX_TX_QUEUES	(IXGBE_MAX_FDIR_INDICES + IXGBE_MAX_FCOE_INDICES)
+/* NOTE: Just hardcode this to 128 because it is biggest upper bound */
+#define MAX_RX_QUEUES	(128)
+#define MAX_TX_QUEUES	(128)
+//#define MAX_RX_QUEUES	(IXGBE_MAX_FDIR_INDICES + IXGBE_MAX_FCOE_INDICES)
+//#define MAX_TX_QUEUES	(IXGBE_MAX_FDIR_INDICES + IXGBE_MAX_FCOE_INDICES)
 #else
-#define MAX_RX_QUEUES	(IXGBE_MAX_FDIR_INDICES + 1)
-#define MAX_TX_QUEUES	(IXGBE_MAX_FDIR_INDICES + 1)
+/* NOTE: Just hardcode this to 128 because it is biggest upper bound */
+#define MAX_RX_QUEUES	(128)
+#define MAX_TX_QUEUES	(128)
+//#define MAX_RX_QUEUES	(IXGBE_MAX_FDIR_INDICES + 1)
+//#define MAX_TX_QUEUES	(IXGBE_MAX_FDIR_INDICES + 1)
 #endif /* CONFIG_FCOE */
 struct ixgbe_ring_feature {
 	u16 limit;	/* upper limit on feature indices */

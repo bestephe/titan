@@ -25,7 +25,10 @@ rmmod ixgbe
 #sudo insmod ixgbe.ko MQ=1,1 TSO=1,1 RSS=16,16
 
 #sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=1,1 VMDQ=4,4 WRR=1,1
-sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=1,1 VMDQ=4,4 WRR=1,1 UsePoolQueues=1,1
+#sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=1,1 VMDQ=4,4 WRR=1,1 UsePoolQueues=1,1
+#sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=1,1 VMDQ=32,32 WRR=1,1 UsePoolQueues=1,1
+#sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=1,1 VMDQ=32,32 WRR=1,1 UsePoolQueues=1,1
+sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=1,1 VMDQ=16,16 WRR=1,1 UsePoolQueues=1,1
 
 #XXX: Outdated invocations because batching wasn't all that helpful
 #sudo insmod ixgbe.ko MQ=1,1 TSO=1,1 XmitBatch=1,1

@@ -6514,6 +6514,10 @@ err_setup_tx:
  **/
 int ixgbe_setup_rx_resources(struct ixgbe_ring *rx_ring)
 {
+	/* DEBUG */
+	pr_info("ixgbe_setup_rx_resources: rx_ring: %p\n", rx_ring);
+	pr_info(" rx_ring->q_vector: %p\n", rx_ring->q_vector);
+
 	struct device *dev = rx_ring->dev;
 	int orig_node = dev_to_node(dev);
 	int numa_node = -1;
@@ -10944,7 +10948,9 @@ ixgbe_set_tx_weight(struct net_device *netdev, int queue_index, u32 weight)
 }
 
 #ifdef HAVE_NET_DEVICE_OPS
-static const struct net_device_ops ixgbe_netdev_ops = {
+//static const struct net_device_ops ixgbe_netdev_ops = {
+//XXX: This can't be const to allow for WRR to be dynamically configured
+static struct net_device_ops ixgbe_netdev_ops = {
 	.ndo_open		= ixgbe_open,
 	.ndo_stop		= ixgbe_close,
 	.ndo_start_xmit		= ixgbe_xmit_frame,
@@ -11065,6 +11071,18 @@ static const struct net_device_ops_ext ixgbe_netdev_ops_ext = {
 
 void ixgbe_assign_netdev_ops(struct net_device *dev)
 {
+	/* Only enable the txq weight ndo if this driver is configured to use
+	 * WRR */
+	struct ixgbe_adapter *adapter = NULL;
+	adapter = netdev_priv(dev);
+	if (adapter->wrr) {
+		ixgbe_netdev_ops.ndo_set_tx_weight = ixgbe_set_tx_weight;
+		pr_info ("Setting .ndo_set_tx_weight\n");
+	} else {
+		ixgbe_netdev_ops.ndo_set_tx_weight = NULL;
+		pr_info ("Ignoring .ndo_set_tx_weight\n");
+	}
+
 #ifdef HAVE_NET_DEVICE_OPS
 	dev->netdev_ops = &ixgbe_netdev_ops;
 #ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT

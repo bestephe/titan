@@ -1135,6 +1135,8 @@ static int ixgbe_alloc_q_vectors(struct ixgbe_adapter *adapter)
 	unsigned int rxr_idx = 0, txr_idx = 0, v_idx = 0;
 	int err;
 
+	pr_info("ixgbe_alloc_q_vectors:\n");
+
 	if (q_vectors >= (rxr_remaining + txr_remaining)) {
 		for (; rxr_remaining; v_idx++) {
 			err = ixgbe_alloc_q_vector(adapter, q_vectors, v_idx,
@@ -1168,6 +1170,9 @@ static int ixgbe_alloc_q_vectors(struct ixgbe_adapter *adapter)
 		rxr_idx++;
 		txr_idx++;
 #endif
+
+		pr_info(" calling: v_idx: %d, tqpv: %d, txr_idx: %d, rqpv: %d, rxr_idx: %d\n",
+			v_idx, tqpv, txr_idx, rqpv, rxr_idx);
 
                 /* XXX: Testing out disabling interleaving. */
 		err = ixgbe_alloc_q_vector(adapter, 1, v_idx,
