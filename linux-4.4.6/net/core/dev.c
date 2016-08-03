@@ -3122,9 +3122,6 @@ static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 
 	if (queue_index >= 0)
 		return queue_index;
-
-	if (dev->dqa_alg != DQA_ALG_HASH)
-		netdev_warn (dev, "Using DQA_HASH even though that is not the current DQA algorithm!\n");
 #endif
 
 	rcu_read_lock();
@@ -3138,6 +3135,13 @@ static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 			//	netdev_warn (dev, " map->queues[%d]: %d\n",
 			//		     i, map->queues[i]);
 			//}
+
+#ifdef CONFIG_DQA
+			/* Warn if we are using hashing to get an XPS queue
+			 * despite the config. */
+			if (dev->dqa_alg != DQA_ALG_HASH)
+				netdev_warn (dev, "Using DQA_HASH even though that is not the current DQA algorithm!\n");
+#endif
 
 			if (map->len == 1)
 				queue_index = map->queues[0];
