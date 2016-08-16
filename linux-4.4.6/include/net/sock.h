@@ -1474,6 +1474,9 @@ static inline void sk_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 
 static inline void sock_release_ownership(struct sock *sk)
 {
+#ifdef CONFIG_DQA
+	trace_printk("sock_release_ownership: sk: %p\n", sk);
+#endif
 	sk->sk_lock.owned = 0;
 }
 
@@ -1500,6 +1503,10 @@ void lock_sock_nested(struct sock *sk, int subclass);
 
 static inline void lock_sock(struct sock *sk)
 {
+#ifdef CONFIG_DQA
+	/* XXX: DEBUG */
+	trace_printk("lock_sock: sk: %p\n", sk);
+#endif
 	lock_sock_nested(sk, 0);
 }
 

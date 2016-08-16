@@ -28,16 +28,21 @@ rmmod ixgbe
 #sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=1,1 VMDQ=4,4 WRR=1,1 UsePoolQueues=1,1
 #sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=1,1 VMDQ=32,32 WRR=1,1 UsePoolQueues=1,1
 #sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=1,1 VMDQ=32,32 WRR=1,1 UsePoolQueues=1,1
-sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=1,1 VMDQ=16,16 WRR=1,1 UsePoolQueues=1,1
+#sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=1,1 VMDQ=16,16 WRR=1,1 UsePoolQueues=1,1
 
 #XXX: Outdated invocations because batching wasn't all that helpful
 #sudo insmod ixgbe.ko MQ=1,1 TSO=1,1 XmitBatch=1,1
 #sudo insmod ixgbe.ko MQ=1,1 TSO=1,1 UseSgseg=1,1 DrvGSOSize=1448,1448
 #sudo insmod ixgbe.ko MQ=1,1 TSO=1,1 XmitBatch=1,1 UseSgseg=1,1 DrvGSOSize=1448,1448
 
+# Test out improving single queue fairness
+sudo insmod ixgbe.ko MDD=0,0 MQ=1,1 TSO=0,0 VMDQ=1,1 WRR=1,1
+
 sleep 1
 
 ethtool -G $ifname rx 4096 tx 4096
+
+ethtool -K $ifname tso off
 
 #sleep 1
 
@@ -45,6 +50,9 @@ sleep 1
 
 #ifconfig eth0 10.42.0.11
 ifconfig $ifname 10.10.1.4 netmask 255.255.255.0
+
+# Set the qdisc to SFQ
+sudo tc qdisc add dev $ifname parent :1 sfq perturb 60
 
 sleep 1
 echo "Starting test" > /dev/kmsg

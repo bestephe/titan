@@ -543,6 +543,9 @@ __u32 cookie_v6_init_sequence(const struct sk_buff *skb, __u16 *mss);
 
 void __tcp_push_pending_frames(struct sock *sk, unsigned int cur_mss,
 			       int nonagle);
+#ifdef CONFIG_DQA
+void tcp_add_sk_to_tasklet(struct sock *sk);
+#endif
 bool tcp_may_send_now(struct sock *sk);
 int __tcp_retransmit_skb(struct sock *, struct sk_buff *);
 int tcp_retransmit_skb(struct sock *, struct sk_buff *);

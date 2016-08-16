@@ -1674,6 +1674,7 @@ struct net_device {
 	unsigned char		dqa_alg;
 	/* XXX: This should be part of priv_flags. */
 	unsigned char		segment_sharedq;
+	u32			qdisc_gso_size;
 #endif
 
 	unsigned char		if_port;
@@ -1840,6 +1841,9 @@ struct net_device {
 	const struct rtnl_link_ops *rtnl_link_ops;
 
 	/* for setting kernel sock attribute on TCP connection setup */
+	/* TODO: Current NICs (e.g., Intel 82599) already support larger TSO
+	 * sizes than 64KB.  Especially as 40 and 100 Gbps NICs are already
+	 * available,  it is reasonable to increase GSO_MAX_SIZE. */
 #define GSO_MAX_SIZE		65536
 	unsigned int		gso_max_size;
 #define GSO_MAX_SEGS		65535

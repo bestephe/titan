@@ -74,6 +74,11 @@ static void try_bulk_dequeue_skb(struct Qdisc *q,
 		(*packets)++; /* GSO counts as one pkt */
 	}
 	skb->next = NULL;
+
+#ifdef CONFIG_DQA
+	trace_printk("try_bulk_dequeue_skb: bytes dequeued: %d\n",
+		     qdisc_avail_bulklimit(txq) - bytelimit);
+#endif
 }
 
 /* Note that dequeue_skb can possibly return a SKB list (via skb->next).
@@ -88,6 +93,9 @@ static struct sk_buff *dequeue_skb(struct Qdisc *q, bool *validate,
 	*packets = 1;
 	*validate = true;
 	if (unlikely(skb)) {
+#ifdef CONFIG_DQA
+		trace_printk("dequeue_skb: using requeued skb: %p\n", skb);
+#endif
 		/* check the reason of requeuing without tx lock first */
 		txq = skb_get_tx_queue(txq->dev, skb);
 		if (!netif_xmit_frozen_or_stopped(txq)) {
@@ -101,6 +109,11 @@ static struct sk_buff *dequeue_skb(struct Qdisc *q, bool *validate,
 		if (!(q->flags & TCQ_F_ONETXQUEUE) ||
 		    !netif_xmit_frozen_or_stopped(txq)) {
 			skb = q->dequeue(q);
+#ifdef CONFIG_DQA
+			//trace_printk("dequeue_skb: dequeued skb: %p "
+			//	     "(may_bulk: %d)\n", skb,
+			//	     qdisc_may_bulk(q));
+#endif
 			if (skb && qdisc_may_bulk(q))
 				try_bulk_dequeue_skb(q, skb, txq, packets);
 		}
@@ -232,6 +245,16 @@ void __qdisc_run(struct Qdisc *q)
 {
 	int quota = weight_p;
 	int packets;
+
+/* XXX: DEBUG */
+#ifdef CONFIG_DQA
+	const struct netdev_queue *txq = q->dev_queue;
+	trace_printk("__qdisc_run: qlen: %d, avail_bulklimit: %d, "
+		     "is_throttled: %d\n", qdisc_qlen(q),
+		     qdisc_avail_bulklimit(txq),
+		     qdisc_is_throttled(q));
+
+#endif
 
 	while (qdisc_restart(q, &packets)) {
 		/*

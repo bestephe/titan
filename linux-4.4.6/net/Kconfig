@@ -287,6 +287,14 @@ config DQA
 	  Dynamic queue assignment chooses the transmit queue used for a socket
 	  dynamically over the lifetime of the socket.
 
+config TCP_XMIT_BATCH
+	bool "TCP Xmit Batching"
+	depends on SYSFS
+	default y
+	---help---
+	  Use a tasklet to send TCP packets to try to batch segment xmit
+	  more text written here
+
 config BPF_JIT
 	bool "enable BPF Just In Time compiler"
 	depends on HAVE_BPF_JIT

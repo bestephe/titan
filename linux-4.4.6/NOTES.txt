@@ -1,0 +1,31 @@
+Touched Files
+=============
+include/net/sock.h
+include/linux/skbuff.h
+net/socket.c
+net/core/skbuff.c
+net/core/dev.c
+net/core/sock.c
+
+Useful Functions
+================
+netdev_get_tx_queue
+skb_get_tx_queue: Calls both netdev_get_tx_queue(...) and
+        skb_get_queue_mapping(...)
+
+Regenerating ctags data
+=======================
+ctags -R --links=no --exclude=debian --exclude=drivers .
+
+Grepping for text
+=================
+grep -r --include="*.c" --include="*.h" <text> .
+
+Ubuntu way of compiling kernel
+==============================
+sudo make-kpkg -j 8 --initrd --append-to-version=-dqa kernel_image kernel_headers
+
+Grub Reboot
+============
+sudo grub-reboot "Advanced options for Ubuntu>Ubuntu, with Linux 4.4.6-dqa"
+

@@ -977,10 +977,18 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 
 			/* zero or one both mean disabled from our driver's
 			 * perspective */
-			if (vmdq > 1) {
+			//if (vmdq > 1) {
+			//	*aflags |= IXGBE_FLAG_VMDQ_ENABLED;
+			//} else
+			//	*aflags &= ~IXGBE_FLAG_VMDQ_ENABLED;
+
+			/* In the qweight version, 1 still means VMDq so we can
+			 * get queue weights? */
+			if (vmdq > 0) {
 				*aflags |= IXGBE_FLAG_VMDQ_ENABLED;
-			} else
+			} else {
 				*aflags &= ~IXGBE_FLAG_VMDQ_ENABLED;
+			}
 
 			feature[RING_F_VMDQ].limit = vmdq;
 #ifdef module_param_array

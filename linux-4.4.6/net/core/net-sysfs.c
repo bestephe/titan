@@ -348,6 +348,20 @@ static ssize_t segment_sharedq_store(struct device *dev,
 }
 NETDEVICE_SHOW_RW(segment_sharedq, fmt_dec);
 
+static int change_qdisc_gso_size(struct net_device *dev, unsigned long new_val)
+{
+	dev->qdisc_gso_size = new_val;
+	return 0;
+}
+
+static ssize_t qdisc_gso_size_store(struct device *dev,
+				     struct device_attribute *attr,
+				     const char *buf, size_t len)
+{
+	return netdev_store(dev, attr, buf, len, change_qdisc_gso_size);
+}
+NETDEVICE_SHOW_RW(qdisc_gso_size, fmt_dec);
+
 #endif /* CONFIG_DQA */
 
 static ssize_t carrier_changes_show(struct device *dev,
@@ -575,6 +589,7 @@ static struct attribute *net_class_attrs[] = {
 #ifdef CONFIG_DQA
 	&dev_attr_dqa_alg.attr,
 	&dev_attr_segment_sharedq.attr,
+	&dev_attr_qdisc_gso_size.attr,
 #endif
 	&dev_attr_carrier_changes.attr,
 	&dev_attr_ifalias.attr,

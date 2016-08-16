@@ -122,6 +122,11 @@ static inline void qdisc_run_end(struct Qdisc *qdisc)
 
 static inline bool qdisc_may_bulk(const struct Qdisc *qdisc)
 {
+#ifdef CONFIG_DQA
+	/* Note: I do not know why only the below restriction that only
+	 * TCQ_F_ONETXQUEUE qdiscs may bulk, is needed. */
+#endif
+
 	return qdisc->flags & TCQ_F_ONETXQUEUE;
 }
 

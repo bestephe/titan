@@ -3525,6 +3525,11 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 
 	sack_state.first_sackt.v64 = 0;
 
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	trace_printk("tcp_ack: sk: %p\n", sk);
+#endif
+
 	/* We very likely will need to access write queue head. */
 	prefetchw(sk->sk_write_queue.next);
 
@@ -3624,8 +3629,13 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 		tcp_process_tlp_ack(sk, ack, flag);
 
 	/* Advance cwnd if state allows */
-	if (tcp_may_raise_cwnd(sk, flag))
+	if (tcp_may_raise_cwnd(sk, flag)) {
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+		trace_printk("tcp_ack: Advancing cwnd. sk: %p\n", sk);
+#endif
 		tcp_cong_avoid(sk, ack, acked);
+	}
 
 	if ((flag & FLAG_FORWARD_PROGRESS) || !(flag & FLAG_NOT_DUP)) {
 		struct dst_entry *dst = __sk_dst_get(sk);
@@ -4942,7 +4952,55 @@ static void tcp_check_space(struct sock *sk)
 
 static inline void tcp_data_snd_check(struct sock *sk)
 {
+/* XXX: I haven't been able to get this to work when implemented here.  After
+ * some more thought, it makes more sense to me to do this in tcp_write_xmit as
+ * a check after the check for TCP small queues. */
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	/* TCP Xmit Batching :
+	 *
+	 * Due to interrupt coalescing and LRO/GRO, it may be likely that ACKs
+	 * for multiple flows are delivered at once.  If this is the case, we
+	 * would like to xmit these sockets at once in a batch so that we can
+	 * improve fairness. */
+
+	/* XXX: This sock_owned_by_user check is likely not needed */
+	/* TODO: experiment with this. */
+	//if (sock_owned_by_user(sk)) {
+	if (0) {
+		tcp_push_pending_frames(sk);
+	} else if (tcp_send_head(sk)) {
+		/* XXX: DEBUG */
+		struct tcp_sock *tp = tcp_sk(sk);
+		trace_printk("tcp_data_snd_check: about to delay "
+			     "tcp_push_pending_frames. sk: %p, "
+			     "sk_wmem_alloc: %d, sk_state: %d, "
+			     "tcp_send_head: %p. TSQ_DEFERRED: %d\n",
+			     sk, atomic_read(&sk->sk_wmem_alloc),
+			     sk->sk_state, tcp_send_head(sk),
+			     test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags));
+
+		/* If the sk is already throttled, queued, or deferred, then
+		 * there is nothing to do. The tasklet will handle sending
+		 * packets. */
+		//if (!test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags)) {
+		if (!test_bit(TSQ_QUEUED, &tp->tsq_flags) &&
+		    !test_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
+		    !test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags)) {
+
+			/* Now that the tcp tasklet is used for more than just
+			 * throttling, any tasklet uses that are not TCP Small queues
+			 * related must ensure to add a reference (+1) to sk_wmem_alloc
+			 * so that sk_free can be called at the end of the tasklet
+			 * function */
+			atomic_inc(&sk->sk_wmem_alloc);
+
+			tcp_add_sk_to_tasklet(sk);
+		}
+	}
+#else
 	tcp_push_pending_frames(sk);
+#endif
 	tcp_check_space(sk);
 }
 

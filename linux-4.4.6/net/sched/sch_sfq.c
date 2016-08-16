@@ -426,6 +426,7 @@ congestion_drop:
 #ifdef CONFIG_DQA
 		/* XXX: DEBUG: I don't want packets being dropped. */
 		printk(KERN_ERR "sfq_enqueue: congestion drop!\n");
+		trace_printk(KERN_ERR "sfq_enqueue: congestion drop!\n");
 #endif
 
 		if (!sfq_headdrop(q))
@@ -448,7 +449,13 @@ enqueue:
 	slot_queue_add(slot, skb);
 	sfq_inc(q, x);
 	if (slot->qlen == 1) {		/* The flow is new */
+#ifdef CONFIG_DQA
+		trace_printk("sfq_enqueue: first packet for sk: %p\n", skb->sk);
+#endif
 		if (q->tail == NULL) {	/* It is the first flow */
+#ifdef CONFIG_DQA
+		trace_printk("sfq_enqueue: first active flow\n");
+#endif
 			slot->next = x;
 		} else {
 			slot->next = q->tail->next;
@@ -462,6 +469,12 @@ enqueue:
 		/* We could use a bigger initial quantum for new flows */
 		slot->allot = q->scaled_quantum;
 	}
+#ifdef CONFIG_DQA
+	//trace_printk("sfq_enqueue: dev: %s, skb: %p, skb->len: %d (%d), "
+	//	     "sk: %p, slot->qlen: %d, sch->q.qlen: %d\n",
+	//	     sch->dev_queue->dev->name, skb, skb->len,
+	//	     qdisc_pkt_len(skb), skb->sk, slot->qlen, sch->q.qlen + 1);
+#endif
 	if (++sch->q.qlen <= q->limit)
 		return NET_XMIT_SUCCESS;
 
@@ -506,9 +519,15 @@ next_slot:
 	slot->backlog -= qdisc_pkt_len(skb);
 	/* Is the slot empty? */
 	if (slot->qlen == 0) {
+#ifdef CONFIG_DQA
+		trace_printk("sfq_dequeue: last packet for sk: %p\n", skb->sk);
+#endif
 		q->ht[slot->hash] = SFQ_EMPTY_SLOT;
 		next_a = slot->next;
 		if (a == next_a) {
+#ifdef CONFIG_DQA
+			trace_printk("sfq_dequeue: no more active slots\n");
+#endif
 			q->tail = NULL; /* no more active slots */
 			return skb;
 		}
@@ -516,6 +535,15 @@ next_slot:
 	} else {
 		slot->allot -= SFQ_ALLOT_SIZE(qdisc_pkt_len(skb));
 	}
+#ifdef CONFIG_DQA
+	//trace_printk("sfq_dequeue: dev: %s, skb: %p, skb->len: %d (%d), "
+	//	     "sk: %p, slot->qlen: %d, sch->q.qlen: %d\n",
+	//	     sch->dev_queue->dev->name, skb, skb->len,
+	//	     qdisc_pkt_len(skb), skb->sk, slot->qlen, sch->q.qlen);
+	//trace_printk("sfq_dequeue: dev: %s, sk: %p, slot->qlen: %d, "
+	//	     "sch->q.qlen: %d\n", sch->dev_queue->dev->name,
+	//	     skb->sk, slot->qlen, sch->q.qlen);
+#endif
 	return skb;
 }
 

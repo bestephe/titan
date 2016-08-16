@@ -1531,6 +1531,16 @@ void sk_free(struct sock *sk)
 	 */
 	if (atomic_dec_and_test(&sk->sk_wmem_alloc)) {
 #ifdef CONFIG_DQA
+		/* XXX: DEBUG */
+		//struct tcp_sock *tp = tcp_sk(sk);
+		//trace_printk("sk_free: sk: %p TSQ_THROTTLED: %d, "
+		//	     "TSQ_QUEUED: %d, TSQ_DEFERRED: %d, "
+		//	     "tcp_send_head: %p, sk_state\n",
+		//	     sk, test_bit(TSQ_THROTTLED, &tp->tsq_flags),
+		//	     test_bit(TSQ_QUEUED, &tp->tsq_flags),
+		//	     test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags),
+		//	     tcp_send_head(sk), sk->sk_state);
+
 		if (atomic_read(&sk->sk_tx_enqcnt) != 0) {
 			printk (KERN_ERR "ERROR! sk_free: sk: %p, tx_sk_enqcnt: %d\n",
 				sk, atomic_read(&sk->sk_tx_enqcnt));

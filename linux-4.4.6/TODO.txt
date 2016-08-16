@@ -1,0 +1,16 @@
+- Add a tcp socket to tcp_tasklet_func when ACKs arrive instead of
+  immediately enqueuing  data?
+
+- Bypassing qdisc when it is empty is probably important for
+  performance, but if we are about to send data from multiple different
+  sockets then bypassing qdisc is a bad idea:
+	- Also, even if qdisc is not bypassed, it is then immediately
+	  scheduled in the current Linux code? I should make some sort
+	  of xmit_batch type flag to signal that multiple TCP sockets
+	  are being serviced at the same time.
+
+- Dynamically chose a sockets TCP byte limit depending on how it is
+  being queued?
+
+- Check if and/or get skb's from multiple sk's to be dequeued fairly in
+  a batch from qdisc

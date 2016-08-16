@@ -142,6 +142,11 @@ void inet_sock_destruct(struct sock *sk)
 	if (sk->sk_type == SOCK_STREAM && sk->sk_state != TCP_CLOSE) {
 		pr_err("Attempt to release TCP socket in state %d %p\n",
 		       sk->sk_state, sk);
+/* XXX: DEBUG: This is useful for debugging sk_wmem_alloc errors. */
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+		BUG();
+#endif
 		return;
 	}
 	if (!sock_flag(sk, SOCK_DEAD)) {

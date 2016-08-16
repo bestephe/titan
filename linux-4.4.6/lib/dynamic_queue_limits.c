@@ -32,6 +32,11 @@ void dql_completed(struct dql *dql, unsigned int count)
 	prev_inprogress = dql->prev_num_queued - dql->num_completed;
 	all_prev_completed = AFTER_EQ(completed, dql->prev_num_queued);
 
+/* XXX: DEBUG */
+#ifdef CONFIG_DQA
+	trace_printk("dql_completed: inprogress: %d\n", inprogress);
+#endif
+
 	if ((ovlimit && !inprogress) ||
 	    (dql->prev_ovlimit && all_prev_completed)) {
 		/*
@@ -102,6 +107,11 @@ void dql_completed(struct dql *dql, unsigned int count)
 	if (limit != dql->limit) {
 		dql->limit = limit;
 		ovlimit = 0;
+/* XXX: DEBUG */
+#ifdef CONFIG_DQA
+		trace_printk("dql_completed: Setting dql->limit: %d\n",
+			     limit);
+#endif
 	}
 
 	dql->adj_limit = limit + completed;

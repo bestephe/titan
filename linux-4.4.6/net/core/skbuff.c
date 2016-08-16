@@ -802,6 +802,10 @@ void kfree_skb(struct sk_buff *skb)
 	else if (likely(!atomic_dec_and_test(&skb->users)))
 		return;
 	trace_kfree_skb(skb, __builtin_return_address(0));
+#ifdef CONFIG_DQA
+	//trace_printk("kfree_skb: dev: %s, skb: %p, sk: %p\n",
+	//	     skb->dev->name, skb, skb->sk);
+#endif
 	__kfree_skb(skb);
 }
 EXPORT_SYMBOL(kfree_skb);
@@ -854,6 +858,10 @@ void consume_skb(struct sk_buff *skb)
 	else if (likely(!atomic_dec_and_test(&skb->users)))
 		return;
 	trace_consume_skb(skb);
+#ifdef CONFIG_DQA
+	//trace_printk("consume_skb: dev: %s, skb: %p, sk: %p\n",
+	//	     skb->dev->name, skb, skb->sk);
+#endif
 	__kfree_skb(skb);
 }
 EXPORT_SYMBOL(consume_skb);
@@ -887,11 +895,19 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	/* Note : keeping track of the number of times an skb has been
 	 * enqueued is complicated by the potential to clone and segment skb's
 	 * after they have been "enqueued". */
+
 	/* By the same logic as setting the destructor to NULL in __skb_clone,
 	 * a cloned skb should not be considered as enqueued. */
 	new->enq_cnt = 0;
 
 	new->force_seg = 0;
+#endif
+
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	/* XXX: Should xmit_more be copied? I don't think so anymore. This
+	 * could break things like retransmitting skbs. */
+	new->xmit_more = old->xmit_more;
 #endif
 
 	memcpy(&new->headers_start, &old->headers_start,

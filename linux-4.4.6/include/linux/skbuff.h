@@ -332,6 +332,7 @@ struct ubuf_info {
 struct skb_shared_info {
 	unsigned char	nr_frags;
 	__u8		tx_flags;
+	/* Note: gso_size is the MSS size to segment, not the maximum allowed */
 	unsigned short	gso_size;
 	/* Warning: this field is not always filled in (UFO)! */
 	unsigned short	gso_segs;

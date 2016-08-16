@@ -2715,8 +2715,20 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 
 	len = skb->len;
 	trace_net_dev_start_xmit(skb, dev);
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	//trace_printk("net_dev_start_xmit: dev: %s, skb: %p, skb->len: %d, "
+	//	     "sk: %p\n", dev->name, skb, skb->len, skb->sk);
+#endif
+
 	rc = netdev_start_xmit(skb, dev, txq, more);
+
 	trace_net_dev_xmit(skb, rc, dev, len);
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	//trace_printk("net_dev_xmit: dev: %s, skb: %p, skb->len: %d, "
+	//	     "sk: %p\n", dev->name, skb, skb->len, skb->sk);
+#endif
 
 	return rc;
 }
@@ -2770,7 +2782,7 @@ static struct sk_buff *validate_xmit_skb(struct sk_buff *skb, struct net_device 
 	if (unlikely(!skb))
 		goto out_null;
 
-#if CONFIG_DQA
+#ifdef CONFIG_DQA
 	/* XXX: DEBUG */
 	//netdev_warn(dev, "validate_xmit_skb: netif_needs_gso(...): %d\n",
 	//	    netif_needs_gso(skb, features));
@@ -2904,8 +2916,21 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 	if (unlikely(test_bit(__QDISC_STATE_DEACTIVATED, &q->state))) {
 		kfree_skb(skb);
 		rc = NET_XMIT_DROP;
+
+/* Note: skipping bypassing the queue hurts throughput.  A better solution than
+ * the code here would be to configure qdisc on the appropriate queues (the
+ * overflow queue) to not allow bypass. */
+//#if 0
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	/* Don't bypass qdisc if we are xmitting multiple skb's in a batch. */
+	/* XXX: 0 in expression below is for debugging */
+	} else if ((q->flags & TCQ_F_CAN_BYPASS) && !skb->xmit_more &&
+		   !qdisc_qlen(q) && qdisc_run_begin(q)) {
+#else
 	} else if ((q->flags & TCQ_F_CAN_BYPASS) && !qdisc_qlen(q) &&
 		   qdisc_run_begin(q)) {
+#endif
 		/*
 		 * This is a work-conserving queue; there are no old skbs
 		 * waiting to be sent out; and the qdisc is not running -
@@ -2920,13 +2945,35 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 				contended = false;
 			}
 			__qdisc_run(q);
-		} else
+		} else {
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+			trace_printk("__qdisc_run bypassed!\n");
+#endif
 			qdisc_run_end(q);
+		}
 
 		rc = NET_XMIT_SUCCESS;
 	} else {
+#ifdef CONFIG_DQA
+		/* TODO: segmenting early here makes more sense. */
+		/* BS: However, locks are held here, and sch_direct_xmit(...)
+		 * makes sure to release root_lock before validating
+		 * (segmenting) the skb */
+		//trace_printk("enqueuing skb: %p, xmit_more: %d\n", skb,
+		//	     skb->xmit_more);
+#endif
 		rc = q->enqueue(skb, q) & NET_XMIT_MASK;
+
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+		/* If we are receiving a batch of packets from TCP Xmit
+		 * Batching, then avoid running qdisc until we have enqueued
+		 * skb's from all of the sk's. */
+		if (!skb->xmit_more && qdisc_run_begin(q)) {
+#else
 		if (qdisc_run_begin(q)) {
+#endif
 			if (unlikely(contended)) {
 				spin_unlock(&q->busylock);
 				contended = false;
@@ -3514,14 +3561,37 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 	skb->tc_verd = SET_TC_AT(skb->tc_verd, AT_EGRESS);
 #endif
 	trace_net_dev_queue(skb);
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	trace_printk("__dev_queue_xmit: dev: %s, skb: %p, sk: %p, "
+		     "xmit_more: %d\n", dev->name, skb, skb->sk,
+		     skb->xmit_more);
+#endif
 	if (q->enqueue) {
+/* XXX: I'm not sure early segmentation is that specific to DQA, but it feels
+ * less like TCP Xmit Batching to me. */
 #ifdef CONFIG_DQA
 		/* Segment the skb early if there are multiple sks using the
 		 * txq */
 		/* XXX: In the overflowq case, it might be worth always
 		 * segmenting packets in the overflowq! */
+		/* If TSO is disabled, then it is probably worth always
+		 * segmenting early */
+		netdev_features_t features;
+		features = netif_skb_features(skb);
 		//if (dev->segment_sharedq) {
-		if (dev->segment_sharedq && atomic_read(&txq->tx_sk_enqcnt) > 1) {
+		if ((dev->segment_sharedq && atomic_read(&txq->tx_sk_enqcnt) > 1) ||
+		    netif_needs_gso(skb, features) ||
+		    dev->qdisc_gso_size > 0) {
+			u32 orig_gso_size = 0;
+			bool xmit_more = skb->xmit_more;
+
+			if (skb_is_gso(skb) && dev->qdisc_gso_size &&
+			    dev->qdisc_gso_size > skb_shinfo(skb)->gso_size) {
+				orig_gso_size = skb_shinfo(skb)->gso_size;
+				skb_shinfo(skb)->gso_size = dev->qdisc_gso_size;
+			}
+
 			/* XXX: DEBUG */
 			//netdev_warn(dev, "__dev_queue_xmit: forcing skb "
 			//	    "segmentation. orig len: %d\n", skb->len);
@@ -3532,17 +3602,31 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 			if (!skb)
 				goto drop;
 
-			/* TODO: skb->xmit_more should be set for all of the
-			 * skb's that are not the lat one? */
+			/* Note: skb->xmit_more is used for TCP Xmit batching.
+			 * If it is set before segmentation, it should be set
+			 * afterwards. */
 
 			while (skb) {
 				struct sk_buff *next = skb->next;
+				skb->next = NULL;
+
+				if (orig_gso_size) {
+					skb_shinfo(skb)->gso_size = orig_gso_size;
+				}
+
+				BUG_ON(xmit_more != skb->xmit_more);
+				/* XXX: This is not correct any more. */
+				//if (!skb->xmit_more && next)
+				//	skb->xmit_more = true;
 
 				/* XXX: DEBUG */
 				//netdev_warn(dev, " seg skb (%p) len: %d\n",
 				//	    skb, skb->len);
+				//trace_printk("__dev_queue_xmit: dev: %s. "
+				//	     "seg skb: %p. len: %d, "
+				//	     "xmit_more: %d\n", dev->name,
+				//	     skb, skb->len, skb->xmit_more);
 
-				skb->next = NULL;
 				/* XXX: BUG: This will ignore all but the last
 				 * rc.  However, at this moment, I'm not sure
 				 * what rc should be if sending one skb fails.
@@ -5224,6 +5308,11 @@ static int napi_poll(struct napi_struct *n, struct list_head *repoll)
 {
 	void *have;
 	int work, weight;
+
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	//trace_printk("napi_poll: dev: %s\n", n->dev->name);
+#endif
 
 	list_del_init(&n->poll_list);
 

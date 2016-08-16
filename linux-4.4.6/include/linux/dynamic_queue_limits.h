@@ -83,6 +83,11 @@ static inline void dql_queued(struct dql *dql, unsigned int count)
 	barrier();
 
 	dql->num_queued += count;
+
+/* DEBUG */
+#ifdef CONFIG_DQA
+	trace_printk("dql_queued: num_queued: %d\n", dql->num_queued);
+#endif
 }
 
 /* Returns how many objects can be queued, < 0 indicates over limit. */

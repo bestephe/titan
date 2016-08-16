@@ -141,7 +141,11 @@ struct sk_buff *tcp_gso_segment(struct sk_buff *skb,
 		seq += mss;
 		if (copy_destructor) {
 #ifdef CONFIG_DQA
-			BUG_ON(skb->sk != gso_skb->sk);
+			//BUG_ON(skb->sk != gso_skb->sk);
+			//if (skb->sk != gso_skb->sk) {
+			//	printk (KERN_ERR "tcp_gso_segment: skb->sk (%p) != "
+			//		"gso_skb->sk (%p)!\n", skb->sk, gso_skb->sk);
+			//}
 #endif
 			skb->destructor = gso_skb->destructor;
 			skb->sk = gso_skb->sk;
@@ -166,10 +170,15 @@ struct sk_buff *tcp_gso_segment(struct sk_buff *skb,
 		/* XXX: However, skb_segment currently sets skb->sk, so
 		 * swapping should be fine. */
 #ifdef CONFIG_DQA
-		BUG_ON(gso_skb->sk != skb->sk);
-#endif
+		//BUG_ON(gso_skb->sk != skb->sk);
+		//if (skb->sk != gso_skb->sk) {
+		//	printk (KERN_ERR "tcp_gso_segment: skb->sk (%p) != "
+		//		"gso_skb->sk (%p)!\n", skb->sk, gso_skb->sk);
+		//}
+		skb->sk = gso_skb->sk;
+#else
 		swap(gso_skb->sk, skb->sk);
-		//skb->sk = gso_skb->sk;
+#endif
 
 		swap(gso_skb->destructor, skb->destructor);
 		sum_truesize += skb->truesize;
