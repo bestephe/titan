@@ -2718,7 +2718,8 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
 	//trace_printk("net_dev_start_xmit: dev: %s, skb: %p, skb->len: %d, "
-	//	     "sk: %p\n", dev->name, skb, skb->len, skb->sk);
+	//	     "sk: %p, xmit_more: %d\n", dev->name, skb, skb->len,
+	//	     skb->sk, skb->xmit_more);
 #endif
 
 	rc = netdev_start_xmit(skb, dev, txq, more);
@@ -2925,6 +2926,8 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 #ifdef CONFIG_DQA
 	/* Don't bypass qdisc if we are xmitting multiple skb's in a batch. */
 	/* XXX: 0 in expression below is for debugging */
+	//} else if (0 && (q->flags & TCQ_F_CAN_BYPASS) && !skb->xmit_more &&
+	//	   !qdisc_qlen(q) && qdisc_run_begin(q)) {
 	} else if ((q->flags & TCQ_F_CAN_BYPASS) && !skb->xmit_more &&
 		   !qdisc_qlen(q) && qdisc_run_begin(q)) {
 #else
@@ -3615,9 +3618,12 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 				}
 
 				BUG_ON(xmit_more != skb->xmit_more);
-				/* XXX: This is not correct any more. */
-				//if (!skb->xmit_more && next)
-				//	skb->xmit_more = true;
+
+				/* Note: This line of code is needed to avoid
+				 * running qdisc for each individual packet in
+				 * a GSO segment! */
+				if (!skb->xmit_more && next)
+					skb->xmit_more = true;
 
 				/* XXX: DEBUG */
 				//netdev_warn(dev, " seg skb (%p) len: %d\n",

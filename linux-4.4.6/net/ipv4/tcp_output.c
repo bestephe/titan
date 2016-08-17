@@ -810,8 +810,8 @@ static void tcp_tsq_handler(struct sock *sk)
 
 		return ret;
 	} else {
-		trace_printk("tcp_tsq_handler: skipping tcp_write_xmit! "
-			     "sk: %p, xmit_more: %d\n", sk, xmit_more);
+		//trace_printk("tcp_tsq_handler: skipping tcp_write_xmit! "
+		//	     "sk: %p, xmit_more: %d\n", sk, xmit_more);
 		trace_printk("tcp_tsq_handler: sk: %p, xmit_more: %d. "
 			     "ERROR if called from tcp_tasklet_func!\n",
 			     sk, xmit_more);
@@ -907,7 +907,7 @@ static void tcp_tasklet_func(unsigned long data)
 	}
 
 	/* XXX: DEBUG */
-	trace_printk("last_sk: %p\n", last_sk);
+	//trace_printk("last_sk: %p\n", last_sk);
 #endif
 
 	list_for_each_safe(q, n, &list) {
@@ -946,7 +946,7 @@ static void tcp_tasklet_func(unsigned long data)
 					     "BUG()! xmit failed! num_sks: %d\n",
 					     sk, num_sks);
 			}
-			//BUG_ON(!end_xmit_more && !xmit_more && ret && num_sks > 1);
+			BUG_ON(!end_xmit_more && !xmit_more && ret && num_sks > 1);
 
 			/* DEBUG */
 			last_used_xmit_more = xmit_more;
@@ -1033,6 +1033,12 @@ void tcp_release_cb(struct sock *sk)
 	if (flags & (1UL << TCP_TSQ_DEFERRED)) {
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
+		/* XXX: I'm testing out forcing all packets to be transmitted
+		 * from the tasklet.  Because of this, the sk needs to be
+		 * marked as queued or deferred for tcp_write_xmit to xmit the
+		 * packet. */
+		set_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
+
 		trace_printk("tcp_release_cb: calling tsq_handler. sk: %p, "
 			     "TSQ_QUEUED: %d, TSQ_THROTTLED: %d, "
 			     "TCP_TSQ_DEFERRED: %lu\n", sk,
@@ -1041,6 +1047,8 @@ void tcp_release_cb(struct sock *sk)
 			     (flags & (1UL << TCP_TSQ_DEFERRED)));
 
 		tcp_tsq_handler(sk, false);
+
+		clear_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
 #else
 		tcp_tsq_handler(sk);
 #endif
@@ -1115,8 +1123,11 @@ void tcp_wfree(struct sk_buff *skb)
 	 * if it improves fairness */
 	/* XXX:  */
 	/* TODO: actually perform measurements */
+	/* Note: Afer performing measurements, I haven't been able to notice a
+	 * big difference. I'm leaving it my way for now, but I'm not sure this
+	 * isn't a mistake. */
 
-	/* TODO: How about This check instead? */
+	/* TODO: How about this check instead? */
 	if (wmem > sysctl_tcp_limit_output_bytes)
 		goto out;
 #else
@@ -2517,12 +2528,27 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		 * tcp_data_snd_check? */
 		/* Having this code here leads to an endless cycle of TCP Xmit
 		 * batching, no? */
-		//trace_printk("tcp_write_xmit: sk: %p. TCP Xmit "
-		//	     "Batching! sk_state: %d\n", sk, sk->sk_state);
-		//if (!sock_owned_by_user(sk)) {
-		//	tcp_add_sk_to_tasklet(sk);
-		//	break;
-		//}
+		if (!test_bit(TSQ_QUEUED, &tp->tsq_flags) &&
+		    !test_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
+		    !test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags)) {
+			trace_printk("tcp_write_xmit: about to delay. "
+				     "sk: %p, sk_wmem_alloc: %d, sk_state: %d, "
+				     "tcp_send_head: %p. TSQ_DEFERRED: %d\n",
+				     sk, atomic_read(&sk->sk_wmem_alloc),
+				     sk->sk_state, tcp_send_head(sk),
+				     test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags));
+
+			/* Now that the tcp tasklet is used for more than just
+			 * throttling, any tasklet uses that are not TCP Small queues
+			 * related must ensure to add a reference (+1) to sk_wmem_alloc
+			 * so that sk_free can be called at the end of the tasklet
+			 * function */
+			atomic_inc(&sk->sk_wmem_alloc);
+
+			tcp_add_sk_to_tasklet(sk);
+
+			break;
+		}
 #endif
 
 //#ifdef CONFIG_TCP_XMIT_BATCH

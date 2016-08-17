@@ -3527,7 +3527,7 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	trace_printk("tcp_ack: sk: %p\n", sk);
+	//trace_printk("tcp_ack: sk: %p\n", sk);
 #endif
 
 	/* We very likely will need to access write queue head. */
