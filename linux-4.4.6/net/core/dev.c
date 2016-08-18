@@ -2951,7 +2951,7 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 		} else {
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-			trace_printk("__qdisc_run bypassed!\n");
+			//trace_printk("__qdisc_run bypassed!\n");
 #endif
 			qdisc_run_end(q);
 		}
@@ -3566,9 +3566,9 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 	trace_net_dev_queue(skb);
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	trace_printk("__dev_queue_xmit: dev: %s, skb: %p, sk: %p, "
-		     "xmit_more: %d\n", dev->name, skb, skb->sk,
-		     skb->xmit_more);
+	//trace_printk("__dev_queue_xmit: dev: %s, skb: %p, sk: %p, "
+	//	     "xmit_more: %d\n", dev->name, skb, skb->sk,
+	//	     skb->xmit_more);
 #endif
 	if (q->enqueue) {
 /* XXX: I'm not sure early segmentation is that specific to DQA, but it feels
@@ -3585,6 +3585,7 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 		//if (dev->segment_sharedq) {
 		if ((dev->segment_sharedq && atomic_read(&txq->tx_sk_enqcnt) > 1) ||
 		    netif_needs_gso(skb, features) ||
+		    skb->xmit_more ||
 		    dev->qdisc_gso_size > 0) {
 			u32 orig_gso_size = 0;
 			bool xmit_more = skb->xmit_more;

@@ -94,7 +94,7 @@ static struct sk_buff *dequeue_skb(struct Qdisc *q, bool *validate,
 	*validate = true;
 	if (unlikely(skb)) {
 #ifdef CONFIG_DQA
-		trace_printk("dequeue_skb: using requeued skb: %p\n", skb);
+		//trace_printk("dequeue_skb: using requeued skb: %p\n", skb);
 #endif
 		/* check the reason of requeuing without tx lock first */
 		txq = skb_get_tx_queue(txq->dev, skb);
@@ -249,10 +249,10 @@ void __qdisc_run(struct Qdisc *q)
 /* XXX: DEBUG */
 #ifdef CONFIG_DQA
 	const struct netdev_queue *txq = q->dev_queue;
-	trace_printk("__qdisc_run: qlen: %d, avail_bulklimit: %d, "
-		     "is_throttled: %d\n", qdisc_qlen(q),
-		     qdisc_avail_bulklimit(txq),
-		     qdisc_is_throttled(q));
+	//trace_printk("__qdisc_run: qlen: %d, avail_bulklimit: %d, "
+	//	     "is_throttled: %d\n", qdisc_qlen(q),
+	//	     qdisc_avail_bulklimit(txq),
+	//	     qdisc_is_throttled(q));
 
 #endif
 

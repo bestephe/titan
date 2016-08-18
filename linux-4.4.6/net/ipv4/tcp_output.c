@@ -755,9 +755,9 @@ void tcp_add_sk_to_tasklet(struct sock *sk)
 		struct tsq_tasklet *tsq;
 
 		/* XXX: DEBUG */
-		trace_printk("tcp_add_sk_to_tasklet: adding "
-			     "socket to tasklet queue. sk: %p\n",
-			     sk);
+		//trace_printk("tcp_add_sk_to_tasklet: adding "
+		//	     "socket to tasklet queue. sk: %p\n",
+		//	     sk);
 
 		/* clear throttled */
 		/* Test first to avoid atomic? */
@@ -926,9 +926,9 @@ static void tcp_tasklet_func(unsigned long data)
 				 !end_xmit_more;
 
 		/* XXX: DEBUG */
-		trace_printk("tcp_tasklet_func: sk: %p, sk_wmem_alloc: %d "
-			     "xmit_more: %d\n", sk,
-			     atomic_read(&sk->sk_wmem_alloc), xmit_more);
+		//trace_printk("tcp_tasklet_func: sk: %p, sk_wmem_alloc: %d "
+		//	     "xmit_more: %d\n", sk,
+		//	     atomic_read(&sk->sk_wmem_alloc), xmit_more);
 		num_sks++;
 #else
 		/* Only lock the socket if we are not using TCP Xmit Batching */
@@ -945,8 +945,11 @@ static void tcp_tasklet_func(unsigned long data)
 				trace_printk("tcp_tasklet_func: sk: %p, "
 					     "BUG()! xmit failed! num_sks: %d\n",
 					     sk, num_sks);
+				printk(KERN_ERR "tcp_tasklet_func: sk: %p, "
+				       "BUG()! xmit failed! num_sks: %d\n",
+				       sk, num_sks);
 			}
-			BUG_ON(!end_xmit_more && !xmit_more && ret && num_sks > 1);
+			//BUG_ON(!end_xmit_more && !xmit_more && ret && num_sks > 1);
 
 			/* DEBUG */
 			last_used_xmit_more = xmit_more;
@@ -957,7 +960,7 @@ static void tcp_tasklet_func(unsigned long data)
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
 			/* XXX: DEBUG */
-			trace_printk("tcp_tasklet_func: sk: %p, deferring work\n", sk);
+			//trace_printk("tcp_tasklet_func: sk: %p, deferring work\n", sk);
 #endif
 			/* defer the work to tcp_release_cb() */
 			set_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
@@ -1039,12 +1042,12 @@ void tcp_release_cb(struct sock *sk)
 		 * packet. */
 		set_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
 
-		trace_printk("tcp_release_cb: calling tsq_handler. sk: %p, "
-			     "TSQ_QUEUED: %d, TSQ_THROTTLED: %d, "
-			     "TCP_TSQ_DEFERRED: %lu\n", sk,
-			     test_bit(TSQ_QUEUED, &tp->tsq_flags),
-			     test_bit(TSQ_THROTTLED, &tp->tsq_flags),
-			     (flags & (1UL << TCP_TSQ_DEFERRED)));
+		//trace_printk("tcp_release_cb: calling tsq_handler. sk: %p, "
+		//	     "TSQ_QUEUED: %d, TSQ_THROTTLED: %d, "
+		//	     "TCP_TSQ_DEFERRED: %lu\n", sk,
+		//	     test_bit(TSQ_QUEUED, &tp->tsq_flags),
+		//	     test_bit(TSQ_THROTTLED, &tp->tsq_flags),
+		//	     (flags & (1UL << TCP_TSQ_DEFERRED)));
 
 		tcp_tsq_handler(sk, false);
 
@@ -1237,8 +1240,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 /* DEBUG */
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	trace_printk("tcp_transmit_skb: sk: %p, skb->xmit_more: %d\n",
-		     sk, skb->xmit_more);
+	//trace_printk("tcp_transmit_skb: sk: %p, skb->xmit_more: %d\n",
+	//	     sk, skb->xmit_more);
 #endif
 
 	if (clone_it) {
@@ -2375,8 +2378,8 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	trace_printk("tcp_write_xmit: sk: %p, sock_owned_by_user: %d\n",
-		     sk, sock_owned_by_user(sk));
+	//trace_printk("tcp_write_xmit: sk: %p, sock_owned_by_user: %d\n",
+	//	     sk, sock_owned_by_user(sk));
 #endif
 
 	sent_pkts = 0;
@@ -2469,8 +2472,8 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 /* XXX: DEBUG */
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-			trace_printk("tcp_write_xmit: sk: %p, breaking! "
-				     "skb->len > 0 and tso_fragment\n", sk);
+			//trace_printk("tcp_write_xmit: sk: %p, breaking! "
+			//	     "skb->len > 0 and tso_fragment\n", sk);
 #endif
 			break;
 		}
@@ -2556,8 +2559,10 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		/* Avoid bypassing qdisc and running qdisc early if we plan on
 		 * sending more skb's from competing flows. */
 		skb->xmit_more = xmit_more;
-		trace_printk("tcp_write_xmit: sk: %p. skb: %p. "
-			    "xmit_more: %d\n", sk, skb, skb->xmit_more);
+
+		/* XXX: DEBUG */
+		//trace_printk("tcp_write_xmit: sk: %p. skb: %p. "
+		//	    "xmit_more: %d\n", sk, skb, skb->xmit_more);
 
 #endif
 
@@ -2607,9 +2612,6 @@ repair:
 	if (!xmit_more && (sent_pkts == 0)) {
 		trace_printk("tcp_write_xmit: sk: %p. Warning! xmit_more == "
 			     "0 yet no packets were sent!\n", sk);
-		trace_printk("tcp_write_xmit: sk: %p, sent_pkts: %d, "
-			     "tcp_send_head: %p\n", sk, sent_pkts,
-			     tcp_send_head(sk));
 	}
 
 	/* Note: Currently, only __tcp_push_pending_frames checks the return of

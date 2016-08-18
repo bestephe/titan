@@ -4973,12 +4973,14 @@ static inline void tcp_data_snd_check(struct sock *sk)
 		/* XXX: DEBUG */
 		struct tcp_sock *tp = tcp_sk(sk);
 		trace_printk("tcp_data_snd_check: about to delay "
-			     "tcp_push_pending_frames. sk: %p, "
-			     "sk_wmem_alloc: %d, sk_state: %d, "
-			     "tcp_send_head: %p. TSQ_DEFERRED: %d\n",
-			     sk, atomic_read(&sk->sk_wmem_alloc),
-			     sk->sk_state, tcp_send_head(sk),
-			     test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags));
+			     "tcp_push_pending_frames. sk: %p\n", sk);
+		//trace_printk("tcp_data_snd_check: about to delay "
+		//	     "tcp_push_pending_frames. sk: %p, "
+		//	     "sk_wmem_alloc: %d, sk_state: %d, "
+		//	     "tcp_send_head: %p. TSQ_DEFERRED: %d\n",
+		//	     sk, atomic_read(&sk->sk_wmem_alloc),
+		//	     sk->sk_state, tcp_send_head(sk),
+		//	     test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags));
 
 		/* If the sk is already throttled, queued, or deferred, then
 		 * there is nothing to do. The tasklet will handle sending

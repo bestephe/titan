@@ -426,7 +426,7 @@ congestion_drop:
 #ifdef CONFIG_DQA
 		/* XXX: DEBUG: I don't want packets being dropped. */
 		printk(KERN_ERR "sfq_enqueue: congestion drop!\n");
-		trace_printk(KERN_ERR "sfq_enqueue: congestion drop!\n");
+		trace_printk("sfq_enqueue: congestion drop!\n");
 #endif
 
 		if (!sfq_headdrop(q))
@@ -450,11 +450,11 @@ enqueue:
 	sfq_inc(q, x);
 	if (slot->qlen == 1) {		/* The flow is new */
 #ifdef CONFIG_DQA
-		trace_printk("sfq_enqueue: first packet for sk: %p\n", skb->sk);
+		//trace_printk("sfq_enqueue: first packet for sk: %p\n", skb->sk);
 #endif
 		if (q->tail == NULL) {	/* It is the first flow */
 #ifdef CONFIG_DQA
-		trace_printk("sfq_enqueue: first active flow\n");
+		//trace_printk("sfq_enqueue: first active flow\n");
 #endif
 			slot->next = x;
 		} else {
@@ -520,13 +520,13 @@ next_slot:
 	/* Is the slot empty? */
 	if (slot->qlen == 0) {
 #ifdef CONFIG_DQA
-		trace_printk("sfq_dequeue: last packet for sk: %p\n", skb->sk);
+		//trace_printk("sfq_dequeue: last packet for sk: %p\n", skb->sk);
 #endif
 		q->ht[slot->hash] = SFQ_EMPTY_SLOT;
 		next_a = slot->next;
 		if (a == next_a) {
 #ifdef CONFIG_DQA
-			trace_printk("sfq_dequeue: no more active slots\n");
+			//trace_printk("sfq_dequeue: no more active slots\n");
 #endif
 			q->tail = NULL; /* no more active slots */
 			return skb;
