@@ -4966,8 +4966,8 @@ static inline void tcp_data_snd_check(struct sock *sk)
 
 	/* XXX: This sock_owned_by_user check is likely not needed */
 	/* TODO: experiment with this. */
-	//if (sock_owned_by_user(sk)) {
-	if (0) {
+	//if (0) {
+	if (sock_owned_by_user(sk)) {
 		tcp_push_pending_frames(sk);
 	} else if (tcp_send_head(sk)) {
 		/* XXX: DEBUG */

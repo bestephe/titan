@@ -42,6 +42,14 @@
 #include <linux/gfp.h>
 #include <linux/module.h>
 
+/* Note: this is for delaying running Qdisc until all sks in a TCP Xmit Batch
+ * have had a chance to send data. This probably breaks isolation, and there is
+ * probably a better way to accomplish this, but it should work for now. */
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+#include <net/pkt_sched.h>
+#endif
+
 /* People can turn this off for buggy TCP's found in printers etc. */
 int sysctl_tcp_retrans_collapse __read_mostly = 1;
 
@@ -778,24 +786,7 @@ void tcp_add_sk_to_tasklet(struct sock *sk)
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
 static bool tcp_tsq_handler(struct sock *sk, bool xmit_more)
-#else
-static void tcp_tsq_handler(struct sock *sk)
-#endif
 {
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-	//if (tcp_write_xmit(sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle, 0,
-	//	           sk_gfp_atomic(sk, GFP_ATOMIC))) {
-	//	tcp_check_probe_timer(sk);
-	//}
-
-	//tcp_write_xmit(sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle, 0,
-	//	       sk_gfp_atomic(sk, GFP_ATOMIC));
-
-	//tcp_write_xmit(sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle,
-	//	       0, GFP_ATOMIC);
-
-	int push_one = xmit_more ? 0 : 1;
 	bool ret;
 
 	if ((1 << sk->sk_state) &
@@ -806,7 +797,7 @@ static void tcp_tsq_handler(struct sock *sk)
 		//tcp_write_xmit(sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle,
 		//	       0, GFP_ATOMIC, xmit_more);
 		ret = __tcp_write_xmit(sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle,
-			               push_one, GFP_ATOMIC, xmit_more);
+			               0, GFP_ATOMIC, xmit_more);
 
 		return ret;
 	} else {
@@ -817,14 +808,17 @@ static void tcp_tsq_handler(struct sock *sk)
 			     sk, xmit_more);
 		return true;
 	}
+}
 #else
+static void tcp_tsq_handler(struct sock *sk)
+{
 	if ((1 << sk->sk_state) &
 	    (TCPF_ESTABLISHED | TCPF_FIN_WAIT1 | TCPF_CLOSING |
 	     TCPF_CLOSE_WAIT  | TCPF_LAST_ACK))
 		tcp_write_xmit(sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle,
 			       0, GFP_ATOMIC);
-#endif
 }
+#endif
 
 /* XXX: This should probably be merged or combined somehow into
  * tcp_may_send_now(...) or tcp_snd_test */
@@ -860,6 +854,7 @@ static bool tcp_tasklet_snd_test(struct sock *sk) {
  * transferring tsq->head because tcp_wfree() might
  * interrupt us (non NAPI drivers)
  */
+/* XXX: Why is this a tasklet? I think it should be a softIRQ. */
 static void tcp_tasklet_func(unsigned long data)
 {
 	struct tsq_tasklet *tsq = (struct tsq_tasklet *)data;
@@ -871,44 +866,17 @@ static void tcp_tasklet_func(unsigned long data)
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	struct sock *last_sk = NULL;
-	bool end_xmit_more = false;
+	LIST_HEAD(delaylist);
+	struct Qdisc *delayq = NULL;
 
 	/* DEBUG */
 	int num_sks = 0;
-	bool last_used_xmit_more = false;
+	int num_qdiscs = 0;
 #endif
 
 	local_irq_save(flags);
 	list_splice_init(&tsq->head, &list);
 	local_irq_restore(flags);
-
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-	/* Init the last_sk to be the first sk */
-	tp = list_entry(list.next, struct tcp_sock, tsq_node);
-	last_sk = (struct sock *)tp;
-
-	/* Find the last socket that can xmit an skb so that xmit_more can be
-	 * set correctly. Requires calling bh_lock_sock first to avoid having
-	 * the socket become acquired before the second loop. */
-	list_for_each_safe(q, n, &list) {
-		tp = list_entry(q, struct tcp_sock, tsq_node);
-		sk = (struct sock *)tp;
-		bh_lock_sock(sk);
-
-		/* Ensure that the socket isn't throttled so that we
-		 * are sure it will xmit a packet.  If this fails, I
-		 * should set push_one if xmit more isn't set. Maybe
-		 * I'll start by doing both? */
-		if (tcp_tasklet_snd_test(sk)) {
-			last_sk = sk;
-		}
-	}
-
-	/* XXX: DEBUG */
-	//trace_printk("last_sk: %p\n", last_sk);
-#endif
 
 	list_for_each_safe(q, n, &list) {
 		tp = list_entry(q, struct tcp_sock, tsq_node);
@@ -918,41 +886,69 @@ static void tcp_tasklet_func(unsigned long data)
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-		/* Note: sk has already been locked above */
-
-		//bool xmit_more = (sk != last_sk) && (n != &list);
-		/* Never set again after it has been unset. */
-		bool xmit_more = (sk != last_sk) && (n != &list) && 
-				 !end_xmit_more;
-
 		/* XXX: DEBUG */
-		//trace_printk("tcp_tasklet_func: sk: %p, sk_wmem_alloc: %d "
-		//	     "xmit_more: %d\n", sk,
-		//	     atomic_read(&sk->sk_wmem_alloc), xmit_more);
+		trace_printk("tcp_tasklet_func: sk: %p, sk_wmem_alloc: %d\n",
+			     sk, atomic_read(&sk->sk_wmem_alloc));
 		num_sks++;
-#else
-		/* Only lock the socket if we are not using TCP Xmit Batching */
-		bh_lock_sock(sk);
 #endif
+
+		bh_lock_sock(sk);
 		if (!sock_owned_by_user(sk)) {
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
 			bool ret;
+			bool xmit_more = true;
+
+			/* We have the bh_lock on sk and we clear it as soon as
+			 * we read it, so it should never not be NULL.  If this
+			 * doesn't hold, then there could be a race condition
+			 * that leads to failing to run a qdisc that needs to
+			 * be run. */
+			//BUG_ON(sk->delayq != NULL);
+
+			/* The above comment seems to be wrong for some reason. */
+			/* Guess: delayq is being set when packets are
+			 * transmitted not via the tasklet it can be set. */
+			if (sk->delayq != NULL) {
+				trace_printk("tcp_tasklet_func: sk: %p, "
+					     "delayq not NULL!? (%p).\n",
+					     sk, sk->delayq);
+				sk->delayq = NULL;
+			}
+
+			/* Clear before the handler can lead to it being set. */
+			sk->delayq = NULL;
 			ret = tcp_tsq_handler(sk, xmit_more);
 
-			/* DEBUG */
-			if (!end_xmit_more && !xmit_more && ret && num_sks > 1) {
-				trace_printk("tcp_tasklet_func: sk: %p, "
-					     "BUG()! xmit failed! num_sks: %d\n",
-					     sk, num_sks);
-				printk(KERN_ERR "tcp_tasklet_func: sk: %p, "
-				       "BUG()! xmit failed! num_sks: %d\n",
-				       sk, num_sks);
-			}
-			//BUG_ON(!end_xmit_more && !xmit_more && ret && num_sks > 1);
+			/* The qdisc should be referenced if it is not NULL. */
+			/* It seems like it would only be correct if it was
+			 * referenced before a reference was returned... */
+			if (sk->delayq != NULL) {
+				/* Clear sk->delayq as soon as possible. */
+				delayq = sk->delayq;	
+				sk->delayq = NULL;
 
-			/* DEBUG */
-			last_used_xmit_more = xmit_more;
+				trace_printk("tcp_tasklet_func: sk: %p, "
+					     "adding qdisc to delayq: %p\n",
+					     sk, delayq);
+
+				/* If this qdisc is already in a delayqlist,
+				 * then just leave it alone as it will
+				 * eventually be run later on another
+				 * processor. */
+				/* Note: The qdisc does need to be
+				 * dereferenced if it is not added to
+				 * the list. */
+				/* XXX: I'm just ignoring references to the
+				 * qdisc for right now.  I'm pretty sure this
+				 * could lead to serious problems if the qdisc
+				 * disappears. This should probably be
+				 * addressed at some point in time. */
+				qdisc_delaylist_try_add(delayq, &delaylist);
+
+				/* Reset for the next iteration. */
+				delayq = NULL;
+			}
 #else
 			tcp_tsq_handler(sk);
 #endif
@@ -962,26 +958,13 @@ static void tcp_tasklet_func(unsigned long data)
 			/* XXX: DEBUG */
 			//trace_printk("tcp_tasklet_func: sk: %p, deferring work\n", sk);
 #endif
+
 			/* defer the work to tcp_release_cb() */
 			set_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags);
 		}
 		bh_unlock_sock(sk);
 
 		clear_bit(TSQ_QUEUED, &tp->tsq_flags);
-
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-		/* Note: only down here so that an assertion can be made */
-		if (!end_xmit_more && !xmit_more) {
-			end_xmit_more = true;
-		}
-
-		//trace_printk("tcp_tasklet_func: sk: %p, " "sk_wmem_alloc: %d. "
-		//	     "sk_state: %d. TSQ_DEFERRED: %d. Calling "
-		//	     "sk_free...\n", sk, atomic_read(&sk->sk_wmem_alloc),
-		//	     sk->sk_state, 
-		//	     test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags));
-#endif
 
 		/* Note: Every time a socket is enqueued to the tcp tasklet, it
 		 * must ensure that there is one extra reference (+1) to
@@ -991,9 +974,36 @@ static void tcp_tasklet_func(unsigned long data)
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	trace_printk("tcp_tasklet_func: end of function. num_sks: %d\n",
-		     num_sks);
-	BUG_ON(last_used_xmit_more);
+	/* TODO: Run all of the delayed Qdiscs. */
+	list_for_each_safe(q, n, &delaylist) {
+		delayq = list_entry(q, struct Qdisc, delaylist);
+
+		/* XXX: DEBUG. */
+		trace_printk("tcp_tasklet_func: now running delayq: %p\n",
+			     delayq);
+
+		/* Remove from the list before scheduling to avoid race
+		 * conditions.  If we removed after, racing could cause Qdisc
+		 * to never run.  By removing before, it may be potentially run
+		 * twice. */
+		qdisc_delaylist_del(delayq);
+
+		/* Try to run the delayq. */
+		netdev_delayed_qdisc(delayq);
+
+		/* Dereference the Qdisc. */
+		/* XXX: I'm ignoring referencing for right now.  This is
+		 * probably a serious BUG. */
+
+		/* XXX: DEBUG */
+		num_qdiscs++;
+	}
+#endif
+
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	trace_printk("tcp_tasklet_func: end of function. num_sks: %d "
+		     "num_qdiscs: %d\n", num_sks, num_qdiscs);
 #endif
 }
 
@@ -1036,6 +1046,7 @@ void tcp_release_cb(struct sock *sk)
 	if (flags & (1UL << TCP_TSQ_DEFERRED)) {
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
+
 		/* XXX: I'm testing out forcing all packets to be transmitted
 		 * from the tasklet.  Because of this, the sk needs to be
 		 * marked as queued or deferred for tcp_write_xmit to xmit the
@@ -2358,6 +2369,13 @@ static int tcp_mtu_probe(struct sock *sk)
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp)
 {
+	/* This function is called if we are not using the tasklet to transmit
+	 * skbs. If this is the case, then we don't care about setting the
+	 * delay queue because xmit_more should never be set.  However, in case
+	 * the socket changes queues, this avoids net/core/dev.c giving
+	 * warnings.   */
+	sk->delayq = NULL;
+
 	return __tcp_write_xmit(sk, mss_now, nonagle, push_one, gfp, false);
 }
 
@@ -2375,12 +2393,6 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 	int result;
 	bool is_cwnd_limited = false;
 	u32 max_segs;
-
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-	//trace_printk("tcp_write_xmit: sk: %p, sock_owned_by_user: %d\n",
-	//	     sk, sock_owned_by_user(sk));
-#endif
 
 	sent_pkts = 0;
 
@@ -2413,23 +2425,11 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 				/* Force out a loss probe pkt. */
 				cwnd_quota = 1;
 			else {
-/* XXX: DEBUG */
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-				//trace_printk("tcp_write_xmit: sk: %p, breaking! "
-				//	     "cwnd_quota: %d\n", sk, cwnd_quota);
-#endif
 				break;
 			}
 		}
 
 		if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now))) {
-/* XXX: DEBUG */
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-			//trace_printk("tcp_write_xmit: sk: %p, breaking! "
-			//	     "!tcp_snd_wnd_test\n", sk);
-#endif
 			break;
 		}
 
@@ -2437,24 +2437,12 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
 						     (tcp_skb_is_last(sk, skb) ?
 						      nonagle : TCP_NAGLE_PUSH)))) {
-/* XXX: DEBUG */
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-				//trace_printk("tcp_write_xmit: sk: %p, breaking! "
-				//	     "!tcp_nagle_test\n", sk);
-#endif
 				break;
 			}
 		} else {
 			if (!push_one &&
 			    tcp_tso_should_defer(sk, skb, &is_cwnd_limited,
 						 max_segs)) {
-/* XXX: DEBUG */
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-				//trace_printk("tcp_write_xmit: sk: %p, breaking! "
-				//	     "!tcp_tso_should_defer\n", sk);
-#endif
 				break;
 			}
 		}
@@ -2469,12 +2457,6 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 		if (skb->len > limit &&
 		    unlikely(tso_fragment(sk, skb, limit, mss_now, gfp))) {
-/* XXX: DEBUG */
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-			//trace_printk("tcp_write_xmit: sk: %p, breaking! "
-			//	     "skb->len > 0 and tso_fragment\n", sk);
-#endif
 			break;
 		}
 
@@ -2529,9 +2511,10 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		 */
 		/* TODO: This could also be in another place.
 		 * tcp_data_snd_check? */
-		/* Having this code here leads to an endless cycle of TCP Xmit
-		 * batching, no? */
-		if (!test_bit(TSQ_QUEUED, &tp->tsq_flags) &&
+		/* This allows non-tasklet sends as long as it is already
+		 * enqueued. I don't really think this is what I want. */
+		if (!sock_owned_by_user(sk) &&
+		    !test_bit(TSQ_QUEUED, &tp->tsq_flags) &&
 		    !test_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
 		    !test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags)) {
 			trace_printk("tcp_write_xmit: about to delay. "

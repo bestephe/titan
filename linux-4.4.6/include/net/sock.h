@@ -69,6 +69,14 @@
 #include <net/tcp_states.h>
 #include <linux/net_tstamp.h>
 
+/* Note: this is for delaying running Qdisc until all sks in a TCP Xmit Batch
+ * have had a chance to send data. This probably breaks isolation, and there is
+ * probably a better way to accomplish this, but it should work for now. */
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+#include <net/pkt_sched.h>
+#endif
+
 struct cgroup;
 struct cgroup_subsys;
 #ifdef CONFIG_NET
@@ -127,7 +135,7 @@ typedef struct {
 	 * within a softirq, but doing so is causing deadlock, so I'm tyring
 	 * out my own spinlock for queue mappings to see if that solves the
 	 * problem. */
-	/* XXX: Also, this field probably shouldn't be in the structure. */
+	/* XXX: Also, this field probably shouldn't be in this structure. */
 	spinlock_t		qmap_slock;
 #endif
 } socket_lock_t;
@@ -470,6 +478,10 @@ struct sock {
 	__u32			sk_mark;
 #ifdef CONFIG_CGROUP_NET_CLASSID
 	u32			sk_classid;
+#endif
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	struct Qdisc		*delayq;
 #endif
 	struct cg_proto		*sk_cgrp;
 	void			(*sk_state_change)(struct sock *sk);
@@ -1475,7 +1487,7 @@ static inline void sk_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
 static inline void sock_release_ownership(struct sock *sk)
 {
 #ifdef CONFIG_DQA
-	//trace_printk("sock_release_ownership: sk: %p\n", sk);
+	trace_printk("sock_release_ownership: sk: %p\n", sk);
 #endif
 	sk->sk_lock.owned = 0;
 }
@@ -1505,7 +1517,7 @@ static inline void lock_sock(struct sock *sk)
 {
 #ifdef CONFIG_DQA
 	/* XXX: DEBUG */
-	//trace_printk("lock_sock: sk: %p\n", sk);
+	trace_printk("lock_sock: sk: %p\n", sk);
 #endif
 	lock_sock_nested(sk, 0);
 }

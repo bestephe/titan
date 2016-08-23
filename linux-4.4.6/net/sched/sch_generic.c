@@ -248,7 +248,7 @@ void __qdisc_run(struct Qdisc *q)
 
 /* XXX: DEBUG */
 #ifdef CONFIG_DQA
-	const struct netdev_queue *txq = q->dev_queue;
+	//const struct netdev_queue *txq = q->dev_queue;
 	//trace_printk("__qdisc_run: qlen: %d, avail_bulklimit: %d, "
 	//	     "is_throttled: %d\n", qdisc_qlen(q),
 	//	     qdisc_avail_bulklimit(txq),
@@ -619,6 +619,11 @@ struct Qdisc *qdisc_alloc(struct netdev_queue *dev_queue,
 		sch->padded = (char *) sch - (char *) p;
 	}
 	INIT_LIST_HEAD(&sch->list);
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	INIT_LIST_HEAD(&sch->delaylist);
+	spin_lock_init(&sch->delaylock);
+#endif
 	skb_queue_head_init(&sch->q);
 
 	spin_lock_init(&sch->busylock);

@@ -2717,9 +2717,9 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 	trace_net_dev_start_xmit(skb, dev);
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	//trace_printk("net_dev_start_xmit: dev: %s, skb: %p, skb->len: %d, "
-	//	     "sk: %p, xmit_more: %d\n", dev->name, skb, skb->len,
-	//	     skb->sk, skb->xmit_more);
+	trace_printk("net_dev_start_xmit: dev: %s, skb: %p, skb->len: %d, "
+		     "sk: %p, xmit_more: %d\n", dev->name, skb, skb->len,
+		     skb->sk, skb->xmit_more);
 #endif
 
 	rc = netdev_start_xmit(skb, dev, txq, more);
@@ -2889,6 +2889,44 @@ static void qdisc_pkt_len_init(struct sk_buff *skb)
 	}
 }
 
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+/* XXX: This is a large heaping of copy+pasta */
+void netdev_delayed_qdisc(struct Qdisc *q)
+{
+	spinlock_t *root_lock = qdisc_lock(q);
+	bool contended;
+
+	/*
+	 * Heuristic to force contended enqueues to serialize on a
+	 * separate lock before trying to get qdisc main lock.
+	 * This permits __QDISC___STATE_RUNNING owner to get the lock more
+	 * often and dequeue packets faster.
+	 */
+	contended = qdisc_is_running(q);
+	if (unlikely(contended))
+		spin_lock(&q->busylock);
+
+	spin_lock(root_lock);
+	if (unlikely(test_bit(__QDISC_STATE_DEACTIVATED, &q->state))) {
+		/* NOOP */
+	} else {
+		/* No need to run when delayed if it is running? */
+		if (qdisc_run_begin(q)) {
+			if (unlikely(contended)) {
+				spin_unlock(&q->busylock);
+				contended = false;
+			}
+			__qdisc_run(q);
+		}
+	}
+	spin_unlock(root_lock);
+	if (unlikely(contended))
+		spin_unlock(&q->busylock);
+}
+EXPORT_SYMBOL(netdev_delayed_qdisc);
+#endif
+
 static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 				 struct net_device *dev,
 				 struct netdev_queue *txq)
@@ -2951,7 +2989,7 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 		} else {
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-			//trace_printk("__qdisc_run bypassed!\n");
+			trace_printk("__qdisc_run bypassed!\n");
 #endif
 			qdisc_run_end(q);
 		}
@@ -2963,8 +3001,10 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 		/* BS: However, locks are held here, and sch_direct_xmit(...)
 		 * makes sure to release root_lock before validating
 		 * (segmenting) the skb */
-		//trace_printk("enqueuing skb: %p, xmit_more: %d\n", skb,
-		//	     skb->xmit_more);
+
+		/* DEBUG */
+		trace_printk("enqueuing skb: %p, xmit_more: %d\n", skb,
+			     skb->xmit_more);
 #endif
 		rc = q->enqueue(skb, q) & NET_XMIT_MASK;
 
@@ -2972,8 +3012,28 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 #ifdef CONFIG_DQA
 		/* If we are receiving a batch of packets from TCP Xmit
 		 * Batching, then avoid running qdisc until we have enqueued
-		 * skb's from all of the sk's. */
-		if (!skb->xmit_more && qdisc_run_begin(q)) {
+		 * skb's from all of the sk's. This is done by returning a
+		 * pointer fo the qdisc as a field in the sk.  The sk should be
+		 * locked already, so hopefully this means that the returned
+		 * pointer won't change out underneath us before it can be read
+		 * and cleared.  Also, there is probably a bug here returning a
+		 * pointer to the qdisc without taking a reference. */
+		//if (0 && skb->xmit_more) {
+		if (skb->xmit_more) {
+			if (skb->sk) {
+				/* XXX: DEBUG */
+				trace_printk("setting delayq: sk: %p. delayq "
+					     "was: %p. will be: %p\n", skb->sk,
+					     skb->sk->delayq, q);
+				if (skb->sk->delayq != NULL && skb->sk->delayq != q) {
+					trace_printk("BUG! overwritting delayq!\n");
+					printk(KERN_ERR "BUG! overwritting delayq!\n");
+				}
+				//BUG_ON(skb->sk->delayq != NULL && skb->sk->delayq != q);
+
+				skb->sk->delayq = q;
+			}
+		} else if (qdisc_run_begin(q)) {
 #else
 		if (qdisc_run_begin(q)) {
 #endif
@@ -3404,6 +3464,11 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 		}
 
 		queue_index = new_index;
+
+#ifdef CONFIG_DQA
+		/* XXX: DEBUG */
+		trace_printk("__netdev_pick_tx: sk: %p. new_index: %d\n", sk, new_index);
+#endif
 	}
 
 #ifdef CONFIG_DQA

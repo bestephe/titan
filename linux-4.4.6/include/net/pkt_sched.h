@@ -102,6 +102,13 @@ int sch_direct_xmit(struct sk_buff *skb, struct Qdisc *q,
 		    struct net_device *dev, struct netdev_queue *txq,
 		    spinlock_t *root_lock, bool validate);
 
+/* For delaying qdisc run because of TCP Xmit Batching */
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+void qdisc_delaylist_try_add(struct Qdisc *q, struct list_head *head);
+void qdisc_delaylist_del(struct Qdisc *q);
+#endif
+
 void __qdisc_run(struct Qdisc *q);
 
 static inline void qdisc_run(struct Qdisc *q)

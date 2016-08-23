@@ -10222,6 +10222,8 @@ static netdev_tx_t ixgbe_xmit_frame(struct sk_buff *skb,
 	}
 
 	if (r_idx >= adapter->num_tx_queues) {
+		trace_printk("ixgbe_xmit_frame: r_idx (%d) > num_tx_queues "
+			"(%d)\n", r_idx, adapter->num_tx_queues);
 		pr_warn("ixgbe_xmit_frame: r_idx (%d) > num_tx_queues (%d)\n",
 			r_idx, adapter->num_tx_queues);
 		r_idx = r_idx % adapter->num_tx_queues;

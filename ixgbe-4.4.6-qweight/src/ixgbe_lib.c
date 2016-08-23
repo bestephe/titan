@@ -554,6 +554,8 @@ static bool ixgbe_set_vmdq_queues(struct ixgbe_adapter *adapter)
 #endif
 
         /* XXX: This function may need to change. */
+	printk(KERN_ERR "ixgbe_set_vmdq_queues: enabled: %d\n",
+	       (adapter->flags & IXGBE_FLAG_VMDQ_ENABLED));
 
 	/* only proceed if VMDq is enabled */
 	if (!(adapter->flags & IXGBE_FLAG_VMDQ_ENABLED))
@@ -582,6 +584,9 @@ static bool ixgbe_set_vmdq_queues(struct ixgbe_adapter *adapter)
 
 		/* double check we are limited to maximum pools */
 		vmdq_i = min_t(u16, IXGBE_MAX_VMDQ_INDICES, vmdq_i);
+
+		/* XXX: This function may need to change. */
+		printk(KERN_ERR " vmdq_i: %d, rss_i: %d\n", vmdq_i, rss_i);
 
 		/* 64 pool mode with 2 queues per pool */
 		if ((vmdq_i > 32) || (rss_i < 4)) {
@@ -697,6 +702,8 @@ static bool ixgbe_set_rss_queues(struct ixgbe_adapter *adapter)
 {
 	struct ixgbe_ring_feature *f;
 	u16 rss_i;
+
+	printk(KERN_ERR "WARNING! Using RSS queues, not VMDq queues!\n");
 
         /* XXX: This function may need to change. */
 

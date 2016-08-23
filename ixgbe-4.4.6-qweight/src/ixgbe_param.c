@@ -933,8 +933,10 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 			feature[RING_F_RSS].limit = rss;
 #ifdef module_param_array
 		} else if (opt.def == 0) {
-			rss = min_t(int, ixgbe_max_rss_indices(adapter),
-				    num_online_cpus());
+			/* We allow for more queues than cores for testing. */
+			//rss = min_t(int, ixgbe_max_rss_indices(adapter),
+			//	    num_online_cpus());
+			rss = ixgbe_max_rss_indices(adapter);
 			feature[RING_F_RSS].limit = rss;
 		}
 #endif

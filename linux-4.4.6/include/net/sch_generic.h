@@ -100,6 +100,14 @@ struct Qdisc {
 	atomic_t		refcnt;
 
 	spinlock_t		busylock ____cacheline_aligned_in_smp;
+
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	/* Used to delay running qdisc until all sk's in a TCP Xmit Batch have
+	 * transmitted */
+	spinlock_t		delaylock ____cacheline_aligned_in_smp;
+	struct list_head	delaylist;
+#endif
 };
 
 static inline bool qdisc_is_running(const struct Qdisc *qdisc)

@@ -3828,6 +3828,12 @@ int __init dev_proc_init(void);
 #define dev_proc_init() 0
 #endif
 
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+/* Likely in the wrong place. Definitely ugly. */
+void netdev_delayed_qdisc(struct Qdisc *q);
+#endif
+
 static inline netdev_tx_t __netdev_start_xmit(const struct net_device_ops *ops,
 					      struct sk_buff *skb, struct net_device *dev,
 					      bool more)

@@ -293,6 +293,40 @@ void qdisc_list_del(struct Qdisc *q)
 }
 EXPORT_SYMBOL(qdisc_list_del);
 
+/* For delaying qdisc run because of TCP Xmit Batching */
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+void qdisc_delaylist_try_add(struct Qdisc *q, struct list_head *head)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&q->delaylock, flags);
+
+	/* If the qdisc is already in a delay list on another CPU, it will
+	 * eventually be run.  Otherwise, add it to the tail of the list. */
+	if (list_empty(&q->delaylist)) {
+		list_add_tail(&q->delaylist, head);
+	} else {
+		/* XXX: DEBUG */
+		trace_printk("qdisc_delaylist_try_add: q: %p, already "
+			     "in list!\n", q);
+	}
+
+	spin_unlock_irqrestore(&q->delaylock, flags);
+}
+EXPORT_SYMBOL(qdisc_delaylist_try_add);
+
+void qdisc_delaylist_del(struct Qdisc *q)
+{
+	unsigned long flags;
+	spin_lock_irqsave(&q->delaylock, flags);
+
+	list_del_init(&q->delaylist);
+
+	spin_unlock_irqrestore(&q->delaylock, flags);
+}
+EXPORT_SYMBOL(qdisc_delaylist_del);
+#endif
+
 struct Qdisc *qdisc_lookup(struct net_device *dev, u32 handle)
 {
 	struct Qdisc *q;
