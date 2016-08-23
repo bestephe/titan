@@ -109,8 +109,8 @@ void dql_completed(struct dql *dql, unsigned int count)
 		ovlimit = 0;
 /* XXX: DEBUG */
 #ifdef CONFIG_DQA
-		trace_printk("dql_completed: Setting dql->limit: %d\n",
-			     limit);
+		//trace_printk("dql_completed: Setting dql->limit: %d\n",
+		//	     limit);
 #endif
 	}
 

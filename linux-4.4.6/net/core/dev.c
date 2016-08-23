@@ -2717,9 +2717,9 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 	trace_net_dev_start_xmit(skb, dev);
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	trace_printk("net_dev_start_xmit: dev: %s, skb: %p, skb->len: %d, "
-		     "sk: %p, xmit_more: %d\n", dev->name, skb, skb->len,
-		     skb->sk, skb->xmit_more);
+	//trace_printk("net_dev_start_xmit: dev: %s, skb: %p, skb->len: %d, "
+	//	     "sk: %p, xmit_more: %d\n", dev->name, skb, skb->len,
+	//	     skb->sk, skb->xmit_more);
 #endif
 
 	rc = netdev_start_xmit(skb, dev, txq, more);
@@ -2966,6 +2966,8 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 	/* XXX: 0 in expression below is for debugging */
 	//} else if (0 && (q->flags & TCQ_F_CAN_BYPASS) && !skb->xmit_more &&
 	//	   !qdisc_qlen(q) && qdisc_run_begin(q)) {
+	//} else if ((q->flags & TCQ_F_CAN_BYPASS) && !qdisc_qlen(q) &&
+	//	   qdisc_run_begin(q)) {
 	} else if ((q->flags & TCQ_F_CAN_BYPASS) && !skb->xmit_more &&
 		   !qdisc_qlen(q) && qdisc_run_begin(q)) {
 #else
@@ -2989,7 +2991,7 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 		} else {
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-			trace_printk("__qdisc_run bypassed!\n");
+			//trace_printk("__qdisc_run bypassed!\n");
 #endif
 			qdisc_run_end(q);
 		}
@@ -3003,8 +3005,8 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 		 * (segmenting) the skb */
 
 		/* DEBUG */
-		trace_printk("enqueuing skb: %p, xmit_more: %d\n", skb,
-			     skb->xmit_more);
+		//trace_printk("enqueuing skb: %p, xmit_more: %d\n", skb,
+		//	     skb->xmit_more);
 #endif
 		rc = q->enqueue(skb, q) & NET_XMIT_MASK;
 
@@ -3022,9 +3024,9 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 		if (skb->xmit_more) {
 			if (skb->sk) {
 				/* XXX: DEBUG */
-				trace_printk("setting delayq: sk: %p. delayq "
-					     "was: %p. will be: %p\n", skb->sk,
-					     skb->sk->delayq, q);
+				//trace_printk("setting delayq: sk: %p. delayq "
+				//	     "was: %p. will be: %p\n", skb->sk,
+				//	     skb->sk->delayq, q);
 				if (skb->sk->delayq != NULL && skb->sk->delayq != q) {
 					trace_printk("BUG! overwritting delayq!\n");
 					printk(KERN_ERR "BUG! overwritting delayq!\n");
@@ -3467,7 +3469,7 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 
 #ifdef CONFIG_DQA
 		/* XXX: DEBUG */
-		trace_printk("__netdev_pick_tx: sk: %p. new_index: %d\n", sk, new_index);
+		//trace_printk("__netdev_pick_tx: sk: %p. new_index: %d\n", sk, new_index);
 #endif
 	}
 

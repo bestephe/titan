@@ -4972,8 +4972,8 @@ static inline void tcp_data_snd_check(struct sock *sk)
 	} else if (tcp_send_head(sk)) {
 		/* XXX: DEBUG */
 		struct tcp_sock *tp = tcp_sk(sk);
-		trace_printk("tcp_data_snd_check: about to delay "
-			     "tcp_push_pending_frames. sk: %p\n", sk);
+		//trace_printk("tcp_data_snd_check: about to delay "
+		//	     "tcp_push_pending_frames. sk: %p\n", sk);
 		//trace_printk("tcp_data_snd_check: about to delay "
 		//	     "tcp_push_pending_frames. sk: %p, "
 		//	     "sk_wmem_alloc: %d, sk_state: %d, "

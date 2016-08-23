@@ -785,12 +785,12 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 	tx_desc = IXGBE_TX_DESC(tx_ring, i);
 	i -= tx_ring->count;
 
-	if (tx_buffer->next_to_watch) {
-		trace_printk("ixgbe_clean_tx_irq: work pending! dev: %s, "
-			     "queue: %d (os queue: %d)\n",
-			     netdev_ring(tx_ring)->name, tx_ring->queue_index,
-			     tx_ring->netdev_queue_index);
-	}
+	//if (tx_buffer->next_to_watch) {
+	//	trace_printk("ixgbe_clean_tx_irq: work pending! dev: %s, "
+	//		     "queue: %d (os queue: %d)\n",
+	//		     netdev_ring(tx_ring)->name, tx_ring->queue_index,
+	//		     tx_ring->netdev_queue_index);
+	//}
 		     
 
 	do {

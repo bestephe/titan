@@ -803,9 +803,6 @@ static bool tcp_tsq_handler(struct sock *sk, bool xmit_more)
 	} else {
 		//trace_printk("tcp_tsq_handler: skipping tcp_write_xmit! "
 		//	     "sk: %p, xmit_more: %d\n", sk, xmit_more);
-		trace_printk("tcp_tsq_handler: sk: %p, xmit_more: %d. "
-			     "ERROR if called from tcp_tasklet_func!\n",
-			     sk, xmit_more);
 		return true;
 	}
 }
@@ -887,8 +884,8 @@ static void tcp_tasklet_func(unsigned long data)
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
 		/* XXX: DEBUG */
-		trace_printk("tcp_tasklet_func: sk: %p, sk_wmem_alloc: %d\n",
-			     sk, atomic_read(&sk->sk_wmem_alloc));
+		//trace_printk("tcp_tasklet_func: sk: %p, sk_wmem_alloc: %d\n",
+		//	     sk, atomic_read(&sk->sk_wmem_alloc));
 		num_sks++;
 #endif
 
@@ -910,10 +907,12 @@ static void tcp_tasklet_func(unsigned long data)
 			/* Guess: delayq is being set when packets are
 			 * transmitted not via the tasklet it can be set. */
 			if (sk->delayq != NULL) {
-				trace_printk("tcp_tasklet_func: sk: %p, "
-					     "delayq not NULL!? (%p).\n",
-					     sk, sk->delayq);
 				sk->delayq = NULL;
+				
+				/* XXX: DEBUG */
+				//trace_printk("tcp_tasklet_func: sk: %p, "
+				//	     "delayq not NULL!? (%p).\n",
+				//	     sk, sk->delayq);
 			}
 
 			/* Clear before the handler can lead to it being set. */
@@ -928,9 +927,9 @@ static void tcp_tasklet_func(unsigned long data)
 				delayq = sk->delayq;	
 				sk->delayq = NULL;
 
-				trace_printk("tcp_tasklet_func: sk: %p, "
-					     "adding qdisc to delayq: %p\n",
-					     sk, delayq);
+				//trace_printk("tcp_tasklet_func: sk: %p, "
+				//	     "adding qdisc to delayq: %p\n",
+				//	     sk, delayq);
 
 				/* If this qdisc is already in a delayqlist,
 				 * then just leave it alone as it will
@@ -979,8 +978,8 @@ static void tcp_tasklet_func(unsigned long data)
 		delayq = list_entry(q, struct Qdisc, delaylist);
 
 		/* XXX: DEBUG. */
-		trace_printk("tcp_tasklet_func: now running delayq: %p\n",
-			     delayq);
+		//trace_printk("tcp_tasklet_func: now running delayq: %p\n",
+		//	     delayq);
 
 		/* Remove from the list before scheduling to avoid race
 		 * conditions.  If we removed after, racing could cause Qdisc
@@ -1181,10 +1180,10 @@ void tcp_wfree(struct sk_buff *skb)
 		 * so that sk_free can be called at the end of the tasklet
 		 * function */
 
-		trace_printk("tcp_wfree: adding socket to tasklet queue. "
-			     "dev: %s, skb: %p, sk: %p, sk_wmem_alloc: %d\n",
-			     skb->dev->name, skb, skb->sk,
-			     atomic_read(&sk->sk_wmem_alloc));
+		//trace_printk("tcp_wfree: adding socket to tasklet queue. "
+		//	     "dev: %s, skb: %p, sk: %p, sk_wmem_alloc: %d\n",
+		//	     skb->dev->name, skb, skb->sk,
+		//	     atomic_read(&sk->sk_wmem_alloc));
 #endif
 
 		/* queue this socket to tasklet queue */
@@ -2486,9 +2485,9 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-			trace_printk("tcp_write_xmit: sk: %p THROTTLED! "
-				     "sk_wmem_alloc: %d, limit: %d\n", sk,
-				     atomic_read(&sk->sk_wmem_alloc), limit);
+			//trace_printk("tcp_write_xmit: sk: %p THROTTLED! "
+			//	     "sk_wmem_alloc: %d, limit: %d\n", sk,
+			//	     atomic_read(&sk->sk_wmem_alloc), limit);
 #endif
 
 			/* It is possible TX completion already happened
@@ -2517,12 +2516,12 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		    !test_bit(TSQ_QUEUED, &tp->tsq_flags) &&
 		    !test_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
 		    !test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags)) {
-			trace_printk("tcp_write_xmit: about to delay. "
-				     "sk: %p, sk_wmem_alloc: %d, sk_state: %d, "
-				     "tcp_send_head: %p. TSQ_DEFERRED: %d\n",
-				     sk, atomic_read(&sk->sk_wmem_alloc),
-				     sk->sk_state, tcp_send_head(sk),
-				     test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags));
+			//trace_printk("tcp_write_xmit: about to delay. "
+			//	     "sk: %p, sk_wmem_alloc: %d, sk_state: %d, "
+			//	     "tcp_send_head: %p. TSQ_DEFERRED: %d\n",
+			//	     sk, atomic_read(&sk->sk_wmem_alloc),
+			//	     sk->sk_state, tcp_send_head(sk),
+			//	     test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags));
 
 			/* Now that the tcp tasklet is used for more than just
 			 * throttling, any tasklet uses that are not TCP Small queues
@@ -2550,10 +2549,6 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 #endif
 
 		if (unlikely(tcp_transmit_skb(sk, skb, 1, gfp))) {
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-			trace_printk("tcp_write_xmit: tcp_transmit_skb error\n");
-#endif
 			break;
 		}
 
@@ -2576,10 +2571,10 @@ repair:
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-		trace_printk("tcp_write_xmit: sk: %p, sent_pkts: %d "
-			     "sock_owned_by_user: %d, sk_wmem_alloc: %d\n",
-			     sk, sent_pkts, sock_owned_by_user(sk),
-			     atomic_read(&sk->sk_wmem_alloc));
+		//trace_printk("tcp_write_xmit: sk: %p, sent_pkts: %d "
+		//	     "sock_owned_by_user: %d, sk_wmem_alloc: %d\n",
+		//	     sk, sent_pkts, sock_owned_by_user(sk),
+		//	     atomic_read(&sk->sk_wmem_alloc));
 #endif
 
 		/* Send one loss probe per tail loss episode. */
@@ -2592,10 +2587,10 @@ repair:
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	if (!xmit_more && (sent_pkts == 0)) {
-		trace_printk("tcp_write_xmit: sk: %p. Warning! xmit_more == "
-			     "0 yet no packets were sent!\n", sk);
-	}
+	//if (!xmit_more && (sent_pkts == 0)) {
+	//	trace_printk("tcp_write_xmit: sk: %p. Warning! xmit_more == "
+	//		     "0 yet no packets were sent!\n", sk);
+	//}
 
 	/* Note: Currently, only __tcp_push_pending_frames checks the return of
 	 * tcp_write_xmit to decide to call tcp_check_probe_timer.  Because
