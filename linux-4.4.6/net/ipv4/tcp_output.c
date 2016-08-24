@@ -787,6 +787,9 @@ void tcp_add_sk_to_tasklet(struct sock *sk)
 #ifdef CONFIG_DQA
 static bool tcp_tsq_handler(struct sock *sk, bool xmit_more)
 {
+	/* This likely has negative side-effects, but currently transmissions
+	 * stop and are broken if this is removed. */
+	int push_one = 1;
 	bool ret;
 
 	if ((1 << sk->sk_state) &
@@ -797,7 +800,7 @@ static bool tcp_tsq_handler(struct sock *sk, bool xmit_more)
 		//tcp_write_xmit(sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle,
 		//	       0, GFP_ATOMIC, xmit_more);
 		ret = __tcp_write_xmit(sk, tcp_current_mss(sk), tcp_sk(sk)->nonagle,
-			               0, GFP_ATOMIC, xmit_more);
+			               push_one, GFP_ATOMIC, xmit_more);
 
 		return ret;
 	} else {
@@ -2571,10 +2574,10 @@ repair:
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-		//trace_printk("tcp_write_xmit: sk: %p, sent_pkts: %d "
-		//	     "sock_owned_by_user: %d, sk_wmem_alloc: %d\n",
-		//	     sk, sent_pkts, sock_owned_by_user(sk),
-		//	     atomic_read(&sk->sk_wmem_alloc));
+		trace_printk("tcp_write_xmit: sk: %p, sent_pkts: %d "
+			     "sock_owned_by_user: %d, sk_wmem_alloc: %d\n",
+			     sk, sent_pkts, sock_owned_by_user(sk),
+			     atomic_read(&sk->sk_wmem_alloc));
 #endif
 
 		/* Send one loss probe per tail loss episode. */

@@ -10232,6 +10232,8 @@ static netdev_tx_t ixgbe_xmit_frame(struct sk_buff *skb,
 	//pr_warn("ixgbe_xmit_frame:\n");
 	//pr_warn(" r_idx: %d, skb->queue_mapping: %d\n", r_idx,
 	//	skb->queue_mapping);
+	//trace_printk("ixgbe_xmit_frame: sk: %p, xmit_more: %d\n",
+	//	     skb->sk, skb->xmit_more);
 
 	tx_ring = adapter->tx_ring[r_idx];
 #else

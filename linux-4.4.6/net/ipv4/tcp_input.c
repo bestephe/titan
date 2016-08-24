@@ -3632,7 +3632,7 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 	if (tcp_may_raise_cwnd(sk, flag)) {
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-		trace_printk("tcp_ack: Advancing cwnd. sk: %p\n", sk);
+		//trace_printk("tcp_ack: Advancing cwnd. sk: %p\n", sk);
 #endif
 		tcp_cong_avoid(sk, ack, acked);
 	}
@@ -4972,8 +4972,8 @@ static inline void tcp_data_snd_check(struct sock *sk)
 	} else if (tcp_send_head(sk)) {
 		/* XXX: DEBUG */
 		struct tcp_sock *tp = tcp_sk(sk);
-		//trace_printk("tcp_data_snd_check: about to delay "
-		//	     "tcp_push_pending_frames. sk: %p\n", sk);
+		trace_printk("tcp_data_snd_check: about to delay "
+			     "tcp_push_pending_frames. sk: %p\n", sk);
 		//trace_printk("tcp_data_snd_check: about to delay "
 		//	     "tcp_push_pending_frames. sk: %p, "
 		//	     "sk_wmem_alloc: %d, sk_state: %d, "
@@ -4985,7 +4985,6 @@ static inline void tcp_data_snd_check(struct sock *sk)
 		/* If the sk is already throttled, queued, or deferred, then
 		 * there is nothing to do. The tasklet will handle sending
 		 * packets. */
-		//if (!test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags)) {
 		if (!test_bit(TSQ_QUEUED, &tp->tsq_flags) &&
 		    !test_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
 		    !test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags)) {
