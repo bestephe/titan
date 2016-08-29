@@ -1741,6 +1741,11 @@ static inline void sk_tx_queue_clear(struct sock *sk)
 	//	sk, sk->sk_tx_queue_mapping,
 	//	atomic_read(&sk->sk_tx_queue_mapping_ver),
 	//	smp_processor_id());
+	//trace_printk("sk_tx_queue_clear: sk: %p "
+	//	"queue_mapping: %d. ver: %d, cpu: %d\n",
+	//	sk, sk->sk_tx_queue_mapping,
+	//	atomic_read(&sk->sk_tx_queue_mapping_ver),
+	//	smp_processor_id());
 #endif
 }
 

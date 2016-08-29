@@ -138,6 +138,10 @@
 #include <linux/hrtimer.h>
 #include <linux/netfilter_ingress.h>
 
+#ifdef CONFIG_DQA
+#include <linux/dynamic_queue_assignment.h>
+#endif
+
 #include "net-sysfs.h"
 
 /* Instead of increasing this, you should create a hash table. */
@@ -1989,6 +1993,12 @@ static void netif_reset_xps_queues_gt(struct net_device *dev, u16 index)
 					     NUMA_NO_NODE);
 
 out_no_maps:
+#ifdef CONFIG_DQA
+	/* Notify DQA of the update to the tx queues. */
+	/* Note: I think this needs to be done while holding the mutex. */
+	dqa_update(dev);
+#endif
+
 	mutex_unlock(&xps_map_mutex);
 }
 
@@ -2132,6 +2142,13 @@ out_no_new_maps:
 	}
 
 out_no_maps:
+
+#ifdef CONFIG_DQA
+	/* Notify DQA of the update to the tx queues. */
+	/* Note: I think this needs to be done while holding the mutex. */
+	dqa_update(dev);
+#endif
+
 	mutex_unlock(&xps_map_mutex);
 
 	return 0;
@@ -2185,6 +2202,15 @@ int netif_set_real_num_tx_queues(struct net_device *dev, unsigned int txq)
 	}
 
 	dev->real_num_tx_queues = txq;
+
+#ifdef CONFIG_DQA
+	/* Notify DQA of the update to the tx queues. */
+	/* Notify DQA of the update to the tx queues. */
+	/* Note: I think this needs to be done while holding the xps_map_mutex. */
+	/* BUG: This xps_map_mutex isn't held. */
+	dqa_update(dev);
+#endif
+
 	return 0;
 }
 EXPORT_SYMBOL(netif_set_real_num_tx_queues);
@@ -2963,12 +2989,13 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
 	/* Don't bypass qdisc if we are xmitting multiple skb's in a batch. */
-	/* XXX: 0 in expression below is for debugging */
-	//} else if (0 && (q->flags & TCQ_F_CAN_BYPASS) && !skb->xmit_more &&
+	/* Now that skb->xmit_more is set always when sent from the tasklet, I
+	 * don't think checking for xmit_more is appropriate.  Instead, lets
+	 * only bypass if DQA requirse segmentation. */
+	//} else if ((q->flags & TCQ_F_CAN_BYPASS) && !skb->xmit_more &&
 	//	   !qdisc_qlen(q) && qdisc_run_begin(q)) {
-	//} else if ((q->flags & TCQ_F_CAN_BYPASS) && !qdisc_qlen(q) &&
-	//	   qdisc_run_begin(q)) {
-	} else if ((q->flags & TCQ_F_CAN_BYPASS) && !skb->xmit_more &&
+	} else if ((q->flags & TCQ_F_CAN_BYPASS) &&
+		   !dqa_txq_needs_seg(dev, txq) &&
 		   !qdisc_qlen(q) && qdisc_run_begin(q)) {
 #else
 	} else if ((q->flags & TCQ_F_CAN_BYPASS) && !qdisc_qlen(q) &&
@@ -3005,8 +3032,9 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 		 * (segmenting) the skb */
 
 		/* DEBUG */
-		//trace_printk("enqueuing skb: %p, xmit_more: %d\n", skb,
-		//	     skb->xmit_more);
+		//trace_printk("enqueuing skb: %p, xmit_more: %d, "
+		//	     "dqa_txq_needs_seg: %d\n", skb, skb->xmit_more,
+		//	     dqa_txq_needs_seg(dev, txq));
 #endif
 		rc = q->enqueue(skb, q) & NET_XMIT_MASK;
 
@@ -3023,17 +3051,25 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 		//if (0 && skb->xmit_more) {
 		if (skb->xmit_more) {
 			if (skb->sk) {
+				/* "q" is an RCU dereferenced pointer.
+				 * However, returning a pointer to the actual
+				 * qdisc is also wrong. */
+				//struct Qdisc *delayq = q;
+				struct Qdisc *delayq = txq->qdisc;
+
 				/* XXX: DEBUG */
 				//trace_printk("setting delayq: sk: %p. delayq "
 				//	     "was: %p. will be: %p\n", skb->sk,
-				//	     skb->sk->delayq, q);
-				if (skb->sk->delayq != NULL && skb->sk->delayq != q) {
-					trace_printk("BUG! overwritting delayq!\n");
-					printk(KERN_ERR "BUG! overwritting delayq!\n");
+				//	     skb->sk->delayq, delayq);
+				if (skb->sk->delayq != NULL && skb->sk->delayq != delayq) {
+					trace_printk("BUG! Overwriting delayq! "
+						     "was: %p. will be: %p\n", skb->sk,
+						     skb->sk->delayq, delayq);
+					printk(KERN_ERR "BUG! Overwriting delayq!\n");
 				}
 				//BUG_ON(skb->sk->delayq != NULL && skb->sk->delayq != q);
 
-				skb->sk->delayq = q;
+				skb->sk->delayq = delayq;
 			}
 		} else if (qdisc_run_begin(q)) {
 #else
@@ -3092,130 +3128,6 @@ int dev_loopback_xmit(struct net *net, struct sock *sk, struct sk_buff *skb)
 }
 EXPORT_SYMBOL(dev_loopback_xmit);
 
-/* TODO: this should be moved into its own file.
- * lib/dyanmic_queue_assignment.c? */
-static inline int get_xps_dqa_queue_even(struct net_device *dev,
-					 struct sk_buff *skb)
-{
-#if defined(CONFIG_XPS) && defined(CONFIG_DQA)
-	struct xps_dev_maps *dev_maps;
-	struct xps_map *map;
-	struct netdev_queue *txq;
-	int min_enqcnt = INT_MAX;
-	int min_queue = -1;
-	int queue_index;
-	int enqcnt;
-	int map_i;
-
-	rcu_read_lock();
-	dev_maps = rcu_dereference(dev->xps_maps);
-	/* XXX: DEBUG */	
-	//netdev_err(dev, "get_xps_dqa_queue_even: dev_maps: %p\n", dev_maps);
-	if (dev_maps) {
-		map = rcu_dereference(
-		    dev_maps->cpu_map[skb->sender_cpu - 1]);
-		if (map) {
-			if (map->len == 1)
-				min_queue = map->queues[0];
-			else {
-				/* XXX: DEBUG */	
-				//netdev_err(dev, "get_xps_dqa_queue_even:\n");
-
-				for (map_i = 0; map_i < map->len; map_i++) {
-					/* TODO: add in prefetching of the txq's */
-
-					queue_index = map->queues[map_i];
-					txq = netdev_get_tx_queue(dev,
-						queue_index);
-					enqcnt = atomic_read(&txq->tx_sk_enqcnt);
-
-					/* XXX: DEBUG */
-					//netdev_err(dev, " mqi: %d, menq: %d, qi: %d, enqcnt: %d\n",
-					//	   min_queue, min_enqcnt, queue_index, enqcnt);
-
-					if (enqcnt < min_enqcnt) {
-						min_queue = queue_index;
-						min_enqcnt = enqcnt;
-					}
-
-					if (enqcnt == 0)
-						break;
-				}
-			}
-
-			if (unlikely(min_queue >= dev->real_num_tx_queues))
-				min_queue = -1;
-		}
-	}
-	rcu_read_unlock();
-
-	return min_queue;
-#else
-	return -1;
-#endif
-}
-
-/* TODO: this should be moved into its own file.
- * lib/dyanmic_queue_assignment.c? */
-static inline int get_xps_dqa_queue_overflowq(struct net_device *dev,
-					      struct sk_buff *skb)
-{
-#if defined(CONFIG_XPS) && defined(CONFIG_DQA)
-	struct xps_dev_maps *dev_maps;
-	struct xps_map *map;
-	struct netdev_queue *txq;
-	int queue_index = -1;
-	int enqcnt;
-	int map_i;
-
-	rcu_read_lock();
-	dev_maps = rcu_dereference(dev->xps_maps);
-	/* XXX: DEBUG */	
-	//netdev_err(dev, "get_xps_dqa_queue_overflowq: dev_maps: %p\n", dev_maps);
-	if (dev_maps) {
-		map = rcu_dereference(
-		    dev_maps->cpu_map[skb->sender_cpu - 1]);
-		if (map) {
-			if (map->len == 1)
-				queue_index = map->queues[0];
-			else {
-				/* XXX: DEBUG */	
-				//netdev_err(dev, "get_xps_dqa_queue_overflowq:\n");
-
-				for (map_i = 0; map_i < map->len; map_i++) {
-					/* TODO: add in prefetching of the txq's */
-
-					queue_index = map->queues[map_i];
-					txq = netdev_get_tx_queue(dev,
-						queue_index);
-					enqcnt = atomic_read(&txq->tx_sk_enqcnt);
-
-					/* XXX: DEBUG */
-					//netdev_err(dev, " qi: %d, enqcnt: %d\n",
-					//	   queue_index, enqcnt);
-
-					if (enqcnt == 0)
-						break;
-				}
-
-				if (map_i == map->len)
-					queue_index = map->queues[map->len - 1];
-
-				
-			}
-
-			if (unlikely(queue_index >= dev->real_num_tx_queues))
-				queue_index = -1;
-		}
-	}
-	rcu_read_unlock();
-
-	return queue_index;
-#else
-	return -1;
-#endif
-}
-
 static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 {
 #ifdef CONFIG_XPS
@@ -3224,14 +3136,7 @@ static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 	int queue_index = -1;
 
 #ifdef CONFIG_DQA
-	/* BS: this code feels ugly. Is there a cleaner way to change between
-	 * all of the queue assignment algorithms? */
-	if (dev->dqa_alg == DQA_ALG_EVEN) {
-		queue_index = get_xps_dqa_queue_even(dev, skb);
-	} else if (dev->dqa_alg == DQA_ALG_OVERFLOWQ) {
-		queue_index = get_xps_dqa_queue_overflowq(dev, skb);
-	}
-
+	queue_index = dqa_get_xps_queue(dev, skb);
 	if (queue_index >= 0)
 		return queue_index;
 #endif
@@ -3251,7 +3156,7 @@ static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 #ifdef CONFIG_DQA
 			/* Warn if we are using hashing to get an XPS queue
 			 * despite the config. */
-			if (dev->dqa_alg != DQA_ALG_HASH)
+			if (dev->dqa.dqa_alg != DQA_ALG_HASH)
 				netdev_warn (dev, "Using DQA_HASH even though that is not the current DQA algorithm!\n");
 #endif
 
@@ -3276,82 +3181,6 @@ static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 #endif
 }
 
-/* TODO: this should be moved into its own file.
- * lib/dyanmic_queue_assignment.c? */
-static inline int get_dqa_queue_even(struct net_device *dev, struct sk_buff *skb)
-{
-#ifdef CONFIG_DQA
-	struct netdev_queue *txq;
-	int min_enqcnt = INT_MAX;
-	int min_queue = -1;
-	int queue_index;
-	int enqcnt;
-
-	/* XXX: DEBUG */	
-	//netdev_err(dev, "get_dqa_queue_even:\n");
-
-	for (queue_index = 0; queue_index < dev->real_num_tx_queues;
-	     queue_index++) {
-		/* TODO: add in prefetching of the txq's */
-
-		txq = netdev_get_tx_queue(dev, queue_index);
-		enqcnt = atomic_read(&txq->tx_sk_enqcnt);
-
-		/* XXX: DEBUG */
-		//netdev_err(dev, " mqi: %d, menq: %d, qi: %d, enqcnt: %d\n",
-		//	   min_queue, min_enqcnt, queue_index, enqcnt);
-
-		if (enqcnt == 0) {
-			return queue_index;
-		} else if (enqcnt < min_enqcnt) {
-			min_queue = queue_index;
-			min_enqcnt = enqcnt;
-		}
-	}
-
-	return min_queue;
-#else
-	return -1;
-#endif
-}
-
-/* TODO: this should be moved into its own file.
- * lib/dyanmic_queue_assignment.c? */
-static inline int get_dqa_queue_overflowq(struct net_device *dev,
-					  struct sk_buff *skb)
-{
-#ifdef CONFIG_DQA
-	struct netdev_queue *txq;
-	int queue_index;
-	int enqcnt;
-
-	/* XXX: TODO: This algorithm would be much faster if we tracked the
-	 * empty queues (or number of empty queues) somewhere*/
-
-	/* XXX: DEBUG */	
-	//netdev_err(dev, "get_dqa_queue_overflowq:\n");
-
-	for (queue_index = 0; queue_index < dev->real_num_tx_queues;
-	     queue_index++) {
-		/* TODO: add in prefetching of the txq's */
-
-		txq = netdev_get_tx_queue(dev, queue_index);
-		enqcnt = atomic_read(&txq->tx_sk_enqcnt);
-
-		/* XXX: DEBUG */
-		//netdev_err(dev, " qi: %d, enqcnt: %d\n", queue_index, enqcnt);
-
-		if (enqcnt == 0)
-			return queue_index;
-	}
-
-	/* The last queue is the overflow queue if there are no empty queues. */
-	return dev->real_num_tx_queues - 1;
-#else
-	return -1;
-#endif
-}
-
 static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 {
 	struct sock *sk = skb->sk;
@@ -3366,12 +3195,11 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 	    queue_index >= dev->real_num_tx_queues) {
 		int new_index = get_xps_queue(dev, skb);
 #ifdef CONFIG_DQA
-		if (new_index < 0 && dev->dqa_alg == DQA_ALG_EVEN)
-			new_index = get_dqa_queue_even(dev, skb);
-		else if (new_index < 0 && dev->dqa_alg == DQA_ALG_OVERFLOWQ)
-			new_index = get_dqa_queue_overflowq(dev, skb);
+		if (new_index < 0)
+			new_index = dqa_get_queue(dev, skb);
 
-		if (new_index < 0 && dev->dqa_alg != DQA_ALG_HASH)
+		/* Breaks isolation */
+		if (new_index < 0 && dev->dqa.dqa_alg != DQA_ALG_HASH)
 			netdev_warn (dev, "Using DQA_HASH even though that is not the current DQA algorithm!\n");
 #endif
 		if (new_index < 0)
@@ -3401,12 +3229,12 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 			    atomic_read(&sk->sk_tx_enqcnt)) {
 				//XXX: is this needed? locking?
 
-				netdev_warn(dev, "__netdev_pick_tx: clearing queue with non-zero enqcnt:");
-				netdev_warn(dev, "  sk: %p, sk_tx_enqcnt: %d, "
-					    "sk_tx_queue_mapping_ver: %d, cpu: %d\n",
-					    sk, atomic_read(&sk->sk_tx_enqcnt),
-					    atomic_read(&sk->sk_tx_queue_mapping_ver),
-					    smp_processor_id());
+				//netdev_warn(dev, "__netdev_pick_tx: clearing queue with non-zero enqcnt:");
+				//netdev_warn(dev, "  sk: %p, sk_tx_enqcnt: %d, "
+				//	    "sk_tx_queue_mapping_ver: %d, cpu: %d\n",
+				//	    sk, atomic_read(&sk->sk_tx_enqcnt),
+				//	    atomic_read(&sk->sk_tx_queue_mapping_ver),
+				//	    smp_processor_id());
 
 				//XXX: UGLY. But tx_queue_clear only works if
 				//the sk_tx_enqcnt == 0 right now.  Is setting
@@ -3425,7 +3253,7 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 				//netdev_err(dev, "__netdev_pick_tx: "
 				//	"dec txq-%d: now %d\n",
 				//	queue_index,
-				//	atomic_read(&txq->tx_sk_enqcnt));
+				//	atomic_read(&txq->dqa_queue.tx_sk_enqcnt));
 			}
 			
 			/* Update the count for the new queue */
@@ -3434,7 +3262,7 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 			/* XXX: DEBUG */
 			//netdev_err(dev, "__netdev_pick_tx: "
 			//	"inc txq-%d: now %d\n",
-			//	new_index, atomic_read(&txq->tx_sk_enqcnt));
+			//	new_index, atomic_read(&txq->dqa_queue.tx_sk_enqcnt));
 
 			/* TODO: is locking needed here? */
 			//XXX: Locking here causes deadlock?
@@ -3469,7 +3297,7 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 
 #ifdef CONFIG_DQA
 		/* XXX: DEBUG */
-		//trace_printk("__netdev_pick_tx: sk: %p. new_index: %d\n", sk, new_index);
+		trace_printk("__netdev_pick_tx: sk: %p. new_index: %d\n", sk, new_index);
 #endif
 	}
 
@@ -3649,23 +3477,29 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 		 * segmenting early */
 		netdev_features_t features;
 		features = netif_skb_features(skb);
-		//if (dev->segment_sharedq) {
-		if ((dev->segment_sharedq && atomic_read(&txq->tx_sk_enqcnt) > 1) ||
+		if (dqa_txq_needs_seg(dev, txq) ||
 		    netif_needs_gso(skb, features) ||
-		    skb->xmit_more ||
-		    dev->qdisc_gso_size > 0) {
+		    /* Always set by the tasklet now. Testing xmit_more seems incorrect */
+		    //skb->xmit_more || 
+		    /* XXX: Stale unused code now. */
+		    dev->dqa.qdisc_gso_size > 0) {
+
 			u32 orig_gso_size = 0;
 			bool xmit_more = skb->xmit_more;
 
-			if (skb_is_gso(skb) && dev->qdisc_gso_size &&
-			    dev->qdisc_gso_size > skb_shinfo(skb)->gso_size) {
+			if (skb_is_gso(skb) && dev->dqa.qdisc_gso_size &&
+			    dev->dqa.qdisc_gso_size > skb_shinfo(skb)->gso_size) {
 				orig_gso_size = skb_shinfo(skb)->gso_size;
-				skb_shinfo(skb)->gso_size = dev->qdisc_gso_size;
+				skb_shinfo(skb)->gso_size = dev->dqa.qdisc_gso_size;
 			}
 
 			/* XXX: DEBUG */
 			//netdev_warn(dev, "__dev_queue_xmit: forcing skb "
 			//	    "segmentation. orig len: %d\n", skb->len);
+			//trace_printk("__dev_queue_xmit: forcing skb "
+			//	     "segmentation. txq-%d: sk: %p, overflowq: %d\n",
+			//	     skb->queue_mapping, skb->sk,
+			//	     txq->dqa_queue.tx_overflowq);
 
 			skb->force_seg = 1;
 			BUG_ON(skb->next);
@@ -3709,6 +3543,12 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 				skb = next;
 			}
 		} else {
+			/* XXX: DEBUG */
+			//trace_printk("__dev_queue_xmit: skipping skb "
+			//	     "segmentation. txq-%d: sk: %p, overflowq: %d\n",
+			//	     skb->queue_mapping, skb->sk,
+			//	     txq->dqa_queue.tx_overflowq);
+
 			rc = __dev_xmit_skb(skb, q, dev, txq);
 		}
 #else
@@ -7159,9 +6999,7 @@ static void netdev_init_one_queue(struct net_device *dev,
 	dql_init(&queue->dql, HZ);
 #endif
 #ifdef CONFIG_DQA
-	atomic_set(&queue->tx_sk_enqcnt, 0);
-	/* Must increment before using first */
-	atomic_set(&queue->tx_sk_trace_maxi, -1); 
+	dqa_queue_init(&queue->dqa_queue);
 #endif
 }
 
@@ -7189,6 +7027,10 @@ static int netif_alloc_netdev_queues(struct net_device *dev)
 
 	netdev_for_each_tx_queue(dev, netdev_init_one_queue, NULL);
 	spin_lock_init(&dev->tx_global_lock);
+
+#ifdef CONFIG_DQA
+	dqa_init(dev);
+#endif
 
 	return 0;
 }

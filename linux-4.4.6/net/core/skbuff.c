@@ -705,7 +705,7 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 				//printk (KERN_ERR "skb_dequeue_from_sk: "
 				//	"dec txq-%d: now %d\n",
 				//	skb->queue_mapping,
-				//	atomic_read(&txq->tx_sk_enqcnt));
+				//	atomic_read(&txq->dqa_queue.tx_sk_enqcnt));
 			}
 		}
 
@@ -720,12 +720,12 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 	if (skb->enq_cnt != 0) {
 		BUG_ON (skb->sk && skb->queue_mapping_ver ==
 			    atomic_read(&skb->sk->sk_tx_queue_mapping_ver));
-		printk (KERN_ERR "Warning! skb_dequeue_from_sk. enq_cnt != 0: "
-			"sk: %p, sk->tx_enqcnt: %d, skb->qver: %d, "
-			"sk->qver: %d\n", skb->sk,
-			skb->sk ? atomic_read(&skb->sk->sk_tx_enqcnt) : 0,
-			skb->queue_mapping_ver,
-			skb->sk ? atomic_read(&skb->sk->sk_tx_queue_mapping_ver) : 0);
+		//printk (KERN_ERR "Warning! skb_dequeue_from_sk. enq_cnt != 0: "
+		//	"sk: %p, sk->tx_enqcnt: %d, skb->qver: %d, "
+		//	"sk->qver: %d\n", skb->sk,
+		//	skb->sk ? atomic_read(&skb->sk->sk_tx_enqcnt) : 0,
+		//	skb->queue_mapping_ver,
+		//	skb->sk ? atomic_read(&skb->sk->sk_tx_queue_mapping_ver) : 0);
 	}
 #endif
 }

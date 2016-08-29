@@ -25,6 +25,10 @@
 #include <linux/pm_runtime.h>
 #include <linux/of.h>
 
+#ifdef CONFIG_DQA
+#include <linux/dynamic_queue_assignment.h>
+#endif
+
 #include "net-sysfs.h"
 
 #ifdef CONFIG_SYSFS
@@ -307,7 +311,10 @@ static ssize_t dqa_alg_store(struct device *dev, struct device_attribute *attr,
 
 	if (!rtnl_trylock())
 		return restart_syscall();
-	netdev->dqa_alg = dqa_alg;
+
+	/* MAke a function call */
+	netdev->dqa.dqa_alg = dqa_alg;
+
 	rtnl_unlock();
 
 	/* XXX: DEBUG */
@@ -317,6 +324,7 @@ static ssize_t dqa_alg_store(struct device *dev, struct device_attribute *attr,
 	return len;
 }
 
+/* Should be moved. */
 static ssize_t dqa_alg_show(struct device *dev,
 			    struct device_attribute *attr, char *buf)
 {
@@ -324,7 +332,7 @@ static ssize_t dqa_alg_show(struct device *dev,
 	unsigned char dqa_alg;
 
 	read_lock(&dev_base_lock);
-	dqa_alg = netdev->dqa_alg;
+	dqa_alg = netdev->dqa.dqa_alg;
 	read_unlock(&dev_base_lock);
 
 	if (dqa_alg >= ARRAY_SIZE(dqa_algs))
@@ -336,7 +344,8 @@ static DEVICE_ATTR_RW(dqa_alg);
 
 static int change_segment_sharedq(struct net_device *dev, unsigned long new_val)
 {
-	dev->segment_sharedq = new_val;
+	/* TODO: Make a function call? */
+	dev->dqa.segment_sharedq = new_val;
 	return 0;
 }
 
@@ -346,11 +355,18 @@ static ssize_t segment_sharedq_store(struct device *dev,
 {
 	return netdev_store(dev, attr, buf, len, change_segment_sharedq);
 }
-NETDEVICE_SHOW_RW(segment_sharedq, fmt_dec);
+
+static ssize_t segment_sharedq_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	const struct net_device *netdev = to_net_dev(dev);
+	return sprintf(buf, fmt_dec, netdev->dqa.segment_sharedq);
+}
+static DEVICE_ATTR_RW(segment_sharedq);
 
 static int change_qdisc_gso_size(struct net_device *dev, unsigned long new_val)
 {
-	dev->qdisc_gso_size = new_val;
+	dev->dqa.qdisc_gso_size = new_val;
 	return 0;
 }
 
@@ -360,7 +376,14 @@ static ssize_t qdisc_gso_size_store(struct device *dev,
 {
 	return netdev_store(dev, attr, buf, len, change_qdisc_gso_size);
 }
-NETDEVICE_SHOW_RW(qdisc_gso_size, fmt_dec);
+
+static ssize_t qdisc_gso_size_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	const struct net_device *netdev = to_net_dev(dev);
+	return sprintf(buf, fmt_dec, netdev->dqa.qdisc_gso_size);
+}
+static DEVICE_ATTR_RW(qdisc_gso_size);
 
 #endif /* CONFIG_DQA */
 
@@ -1259,7 +1282,7 @@ static ssize_t dqa_show_sk_trace_reset(struct netdev_queue *queue,
 				       struct netdev_queue_attribute *attr,
 				       char *buf)
 {
-	return sprintf(buf, "%u\n", atomic_read(&queue->tx_sk_trace_maxi));
+	return sprintf(buf, "%u\n", atomic_read(&queue->dqa_queue.tx_sk_trace_maxi));
 }
 
 static ssize_t dqa_set_sk_trace_reset(struct netdev_queue *queue,
@@ -1274,7 +1297,7 @@ static ssize_t dqa_set_sk_trace_reset(struct netdev_queue *queue,
 		return err;
 
 	if (value)
-		atomic_set(&queue->tx_sk_trace_maxi, -1);
+		atomic_set(&queue->dqa_queue.tx_sk_trace_maxi, -1);
 
 	return len;
 }
@@ -1318,7 +1341,7 @@ static ssize_t dqa_show_enqcnt(struct netdev_queue *queue,
 			       struct netdev_queue_attribute *attr,
 			       char *buf)
 {
-	return sprintf(buf, "%d\n", atomic_read(&queue->tx_sk_enqcnt));
+	return sprintf(buf, "%d\n", atomic_read(&queue->dqa_queue.tx_sk_enqcnt));
 }
 
 static struct netdev_queue_attribute dqa_enqcnt_attribute =

@@ -37,7 +37,14 @@
 #include <linux/rculist.h>
 #include <linux/dmaengine.h>
 #include <linux/workqueue.h>
+/* XXX: Why isn't this inside of an #ifdef CONFIG_DQL? */
 #include <linux/dynamic_queue_limits.h>
+
+/* XXX: <linux/dynamic_queue_assignment.h> needs to include this file, so it
+ * shouldn't be included here. */
+//#ifdef CONFIG_DQA
+//#include <linux/dynamic_queue_assignment.h>
+//#endif
 
 #include <linux/ethtool.h>
 #include <net/net_namespace.h>
@@ -554,15 +561,49 @@ enum netdev_queue_state_t {
  * netif_xmit*stopped functions, they should only be using netif_tx_*.
  */
 
-
 #ifdef CONFIG_DQA
-#define DQA_TXQ_TRACE_MAX_ENTRIES	(16384)
+/* XXX: I want this to be in include/linux/dynamic_queue_assignment.h. Cyclic
+ * dependencies prevent this. */
 
-struct netdev_queue_trace {
+/* Tracing structure used for measuremnt/experimentation */
+#define DQA_TXQ_TRACE_MAX_ENTRIES	(16384)
+struct dqa_queue_trace {
 	//unsigned long		ts;
 	struct timespec		tv;
 	u64			ts_nsec;
 	int			enqcnt;
+};
+
+struct dqa_queue {
+        atomic_t                tx_sk_enqcnt;
+	unsigned long		tx_weight;
+
+	/* Because there are a lot of possible ways to (mis-)configure XPS, a
+	 * queue can be an overflowq for XPS on one CPU and not an overflowq on
+	 * another CPU.  This seems wrong, but it also makes setting flags to
+	 * figure out if a queue is an overflowq in constant time difficult. */
+	/* Note: however, it is easy to know if an overflowq was picked when we
+	 * pick it.  Because of this, I think the easiest way at the moment to
+	 * know if an sk/skb is using an overflowq is to mark a flag in the
+	 * socket when the queue is set. */
+	/* Actually, I think I'm just going to let it be possible to
+	 * misconfigure the overflowq and XPS.  In this misconfiguration, only
+	 * using a single flag will ensure that segmentation will occur if a
+	 * queue is EITHER a XPS or non-XPS overflowq. */
+	u8			tx_overflowq;
+	//u8			tx_xps_overflowq;
+
+	/* XXX: DEBUG: */
+	struct dqa_queue_trace	tx_sk_trace[DQA_TXQ_TRACE_MAX_ENTRIES];
+	atomic_t		tx_sk_trace_maxi;
+};
+
+struct dqa {
+	unsigned char		dqa_alg;
+	/* XXX: This should be part of priv_flags. */
+	unsigned char		segment_sharedq;
+	/* This isn't used anymore. */
+	u32			qdisc_gso_size;
 };
 #endif
 
@@ -602,12 +643,7 @@ struct netdev_queue {
 #endif
 
 #ifdef CONFIG_DQA
-        atomic_t                tx_sk_enqcnt;
-
-	/* XXX: DEBUG: */
-	struct netdev_queue_trace tx_sk_trace[DQA_TXQ_TRACE_MAX_ENTRIES];
-	atomic_t		tx_sk_trace_maxi;
-	unsigned long		tx_weight;
+	struct dqa_queue	dqa_queue;
 #endif
 	unsigned long		tx_maxrate;
 } ____cacheline_aligned_in_smp;
@@ -1359,26 +1395,6 @@ enum netdev_priv_flags {
 #define IFF_OPENVSWITCH			IFF_OPENVSWITCH
 #define IFF_L3MDEV_SLAVE		IFF_L3MDEV_SLAVE
 
-#ifdef CONFIG_DQA
-/**
- * enum net_device_dqa_algs - &struct net_device dqa_alg
- *
- * @DQA_ALG_HASH: Default hashing algorithm
- * @DQA_ALG_EVEN: Try to evenly distribute flows across queues
- * @DQA_ALG_*: Description
- */
-enum netdev_dqa_algs {
-	DQA_ALG_HASH,
-	DQA_ALG_EVEN,
-	DQA_ALG_OVERFLOWQ,
-};
-
-#define DQA_ALG_HASH			DQA_ALG_HASH
-#define DQA_ALG_EVEN			DQA_ALG_EVEN
-#define DQA_ALG_OVERFLOWQ		DQA_ALG_OVERFLOWQ
-
-#endif /* CONFIG_DQA */
-
 
 /**
  *	struct net_device - The DEVICE structure.
@@ -1671,10 +1687,7 @@ struct net_device {
 	unsigned char		link_mode;
 
 #ifdef CONFIG_DQA
-	unsigned char		dqa_alg;
-	/* XXX: This should be part of priv_flags. */
-	unsigned char		segment_sharedq;
-	u32			qdisc_gso_size;
+	struct dqa		dqa;
 #endif
 
 	unsigned char		if_port;
@@ -1954,17 +1967,18 @@ struct netdev_queue *netdev_pick_tx(struct net_device *dev,
 static inline void netdev_sk_enqcnt_trace(struct netdev_queue *txq,
 					  int enqcnt)
 {
-	struct netdev_queue_trace *trace_data;
+	struct dqa_queue_trace *trace_data;
+	struct dqa_queue *dqaq = &txq->dqa_queue;
 	int trace_i;
 
 	/* XXX: This can still race where enqcnt may not be monotonic if two
 	 * threads race for this function. */
-	if (atomic_read(&txq->tx_sk_trace_maxi) <
+	if (atomic_read(&dqaq->tx_sk_trace_maxi) <
 	    (DQA_TXQ_TRACE_MAX_ENTRIES - 1)) {
-		trace_i = atomic_inc_return(&txq->tx_sk_trace_maxi);
+		trace_i = atomic_inc_return(&dqaq->tx_sk_trace_maxi);
 		if (trace_i >= DQA_TXQ_TRACE_MAX_ENTRIES)
 			return;
-		trace_data = &txq->tx_sk_trace[trace_i];
+		trace_data = &dqaq->tx_sk_trace[trace_i];
 		getnstimeofday(&trace_data->tv);
 		trace_data->enqcnt = enqcnt;
 		trace_data->ts_nsec = local_clock();
@@ -1996,13 +2010,15 @@ static inline void netdev_update_txq_weight(struct net_device *dev,
 
 /* TODO: I feel like this function should take in as an argument the socket
  * that is being added. */
+/* This should likely be in lib/dynamic_queue_assignment.c */
 static inline void netdev_sk_enqcnt_inc(struct net_device *dev, int queue_index)
 {
 	struct netdev_queue *txq = netdev_get_tx_queue(dev, queue_index);
 	int enqcnt;
 
+	/* This should be a function call */
 	//atomic_inc(&txq->tx_sk_enqcnt);
-	enqcnt = atomic_inc_return(&txq->tx_sk_enqcnt);
+	enqcnt = atomic_inc_return(&txq->dqa_queue.tx_sk_enqcnt);
 
 	/* If the driver supports queue weights, set the queue weight
 	 * appropriately. */
@@ -2027,8 +2043,9 @@ static inline void netdev_sk_enqcnt_dec(struct net_device *dev, int queue_index)
 	struct netdev_queue *txq = netdev_get_tx_queue(dev, queue_index);
 	int enqcnt;
 
+	/* This should be a function call */
 	//atomic_dec(&txq->tx_sk_enqcnt);
-	enqcnt = atomic_dec_return(&txq->tx_sk_enqcnt);
+	enqcnt = atomic_dec_return(&txq->dqa_queue.tx_sk_enqcnt);
 
 	/* If the driver supports queue weights, set the queue weight
 	 * appropriately. */

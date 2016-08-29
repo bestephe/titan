@@ -1115,25 +1115,23 @@ void __init tcp_tasklet_init(void)
  * We can't xmit new skbs from this context, as we might already
  * hold qdisc lock.
  */
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
 void tcp_wfree(struct sk_buff *skb)
 {
 	struct sock *sk = skb->sk;
 	struct tcp_sock *tp = tcp_sk(sk);
 	int wmem;
 
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-	//trace_printk("tcp_wfree: dev: %s, skb: %p, sk: %p\n",
-	//	     skb->dev->name, skb, skb->sk);
-#endif
-
 	/* Keep one reference on sk_wmem_alloc.
 	 * Will be released by sk_free() from here or tcp_tasklet_func()
 	 */
 	wmem = atomic_sub_return(skb->truesize - 1, &sk->sk_wmem_alloc);
 
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
+	//trace_printk("tcp_wfree: dev: %s, skb: %p, sk: %p, wmem_alloc: %d\n",
+	//	     skb->dev->name, skb, skb->sk,
+	//	     atomic_read(&sk->sk_wmem_alloc));
+
 	/* Note: The below code tries to wait until all of the bytes for a flow
 	 * are freed before scheduling it again. I'm disabling this to test out
 	 * if it improves fairness */
@@ -1146,7 +1144,6 @@ void tcp_wfree(struct sk_buff *skb)
 	/* TODO: How about this check instead? */
 	if (wmem > sysctl_tcp_limit_output_bytes)
 		goto out;
-#else
 
 	/* If this softirq is serviced by ksoftirqd, we are likely under stress.
 	 * Wait until our queues (qdisc + devices) are drained.
@@ -1155,12 +1152,9 @@ void tcp_wfree(struct sk_buff *skb)
 	 * - chance for incoming ACK (processed by another cpu maybe)
 	 *   to migrate this flow (skb->ooo_okay will be eventually set)
 	 */
-	if (wmem >= SKB_TRUESIZE(1) && this_cpu_ksoftirqd() == current)
-		goto out;
-#endif
+	//if (wmem >= SKB_TRUESIZE(1) && this_cpu_ksoftirqd() == current)
+	//	goto out;
 
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
 	//trace_printk("tcp_wfree: dev: %s, skb: %p, sk: %p, "
 	//	     "TSQ_THROTTLED: %d, TSQ_QUEUED: %d, "
 	//	     "tcp_send_head: %p\n",
@@ -1168,15 +1162,18 @@ void tcp_wfree(struct sk_buff *skb)
 	//	     test_bit(TSQ_THROTTLED, &tp->tsq_flags),
 	//	     test_bit(TSQ_QUEUED, &tp->tsq_flags),
 	//	     tcp_send_head(sk));
-#endif
 
-	if (test_and_clear_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
-	    !test_and_set_bit(TSQ_QUEUED, &tp->tsq_flags)) {
+	/* Note: with TCP_XMIT_BATCHING, it is possible to not be throttled by
+	 * still need to be scheduled for transmission here.  I'm not exaclty
+	 * sure why, and its is likely a bug. */
+	//test_and_clear_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
+	if (!test_and_set_bit(TSQ_QUEUED, &tp->tsq_flags)) {
 		unsigned long flags;
 		struct tsq_tasklet *tsq;
 
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
+		/* clear throttled */
+		clear_bit(TSQ_THROTTLED, &tp->tsq_flags);
+
 		/* Now that the tcp tasklet is used for more than just
 		 * throttling, any tasklet uses that are not TCP Small queues
 		 * related must ensure to add a reference (+1) to sk_wmem_alloc
@@ -1187,7 +1184,6 @@ void tcp_wfree(struct sk_buff *skb)
 		//	     "dev: %s, skb: %p, sk: %p, sk_wmem_alloc: %d\n",
 		//	     skb->dev->name, skb, skb->sk,
 		//	     atomic_read(&sk->sk_wmem_alloc));
-#endif
 
 		/* queue this socket to tasklet queue */
 		/* XXX: This should be its own function, not copy+pasta */
@@ -1199,8 +1195,6 @@ void tcp_wfree(struct sk_buff *skb)
 		return;
 	}
 out:
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
 	//if (tcp_send_head(sk) ||
 	//    test_bit(TSQ_THROTTLED, &tp->tsq_flags) ||
 	//    test_bit(TSQ_QUEUED, &tp->tsq_flags) ||
@@ -1219,10 +1213,49 @@ out:
 	//	     skb->dev->name, skb, skb->sk,
 	//	     atomic_read(&sk->sk_wmem_alloc),
 	//	     skb->sk->sk_state);
-#endif
 
 	sk_free(sk);
 }
+#else
+void tcp_wfree(struct sk_buff *skb)
+{
+	struct sock *sk = skb->sk;
+	struct tcp_sock *tp = tcp_sk(sk);
+	int wmem;
+
+	/* Keep one reference on sk_wmem_alloc.
+	 * Will be released by sk_free() from here or tcp_tasklet_func()
+	 */
+	wmem = atomic_sub_return(skb->truesize - 1, &sk->sk_wmem_alloc);
+
+	/* If this softirq is serviced by ksoftirqd, we are likely under stress.
+	 * Wait until our queues (qdisc + devices) are drained.
+	 * This gives :
+	 * - less callbacks to tcp_write_xmit(), reducing stress (batches)
+	 * - chance for incoming ACK (processed by another cpu maybe)
+	 *   to migrate this flow (skb->ooo_okay will be eventually set)
+	 */
+	if (wmem >= SKB_TRUESIZE(1) && this_cpu_ksoftirqd() == current)
+		goto out;
+
+	if (test_and_clear_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
+	    !test_and_set_bit(TSQ_QUEUED, &tp->tsq_flags)) {
+		unsigned long flags;
+		struct tsq_tasklet *tsq;
+
+		/* queue this socket to tasklet queue */
+		/* XXX: This should be its own function, not copy+pasta */
+		local_irq_save(flags);
+		tsq = this_cpu_ptr(&tsq_tasklet);
+		list_add(&tp->tsq_node, &tsq->head);
+		tasklet_schedule(&tsq->tasklet);
+		local_irq_restore(flags);
+		return;
+	}
+out:
+	sk_free(sk);
+}
+#endif
 
 /* This routine actually transmits TCP packets queued in by
  * tcp_do_sendmsg().  This is used by both the initial

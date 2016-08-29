@@ -3,6 +3,10 @@
 #include <linux/seq_file.h>
 #include <net/wext.h>
 
+#ifdef CONFIG_DQA
+#include <linux/dynamic_queue_assignment.h>
+#endif
+
 #define BUCKET_SPACE (32 - NETDEV_HASHBITS - 1)
 
 #define get_bucket(x) ((x) >> BUCKET_SPACE)
@@ -420,7 +424,7 @@ static int dev_queues_seq_show(struct seq_file *seq, void *v)
 {
 	struct net_device *dev = v;
 	struct netdev_queue *txq;
-	struct netdev_queue_trace *trace;
+	struct dqa_queue_trace *trace;
 	int queue_i, trace_i;
 
 	if (v == SEQ_START_TOKEN)
@@ -434,13 +438,13 @@ static int dev_queues_seq_show(struct seq_file *seq, void *v)
 	for (queue_i = 0; queue_i < dev->real_num_tx_queues; queue_i++) {
 		txq = netdev_get_tx_queue(dev, queue_i);
 		seq_printf(seq, "  txq-%d:\n", queue_i);
-		if (atomic_read(&txq->tx_sk_trace_maxi) < 0) {
+		if (atomic_read(&txq->dqa_queue.tx_sk_trace_maxi) < 0) {
 			seq_printf(seq, "    - {ts: 0.0, enqcnt: 0}\n");
 		}
 		for (trace_i = 0;
-		     trace_i <= atomic_read(&txq->tx_sk_trace_maxi) &&
+		     trace_i <= atomic_read(&txq->dqa_queue.tx_sk_trace_maxi) &&
 		     trace_i < DQA_TXQ_TRACE_MAX_ENTRIES; trace_i++) {
-			trace = &txq->tx_sk_trace[trace_i];
+			trace = &txq->dqa_queue.tx_sk_trace[trace_i];
 
 			/* XXX: Go back to this style of printing after debugging */
 			seq_printf(seq, "    - {ts: %ld.%.9ld, enqcnt: %d}\n",

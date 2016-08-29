@@ -1574,6 +1574,10 @@ static inline bool tcp_write_queue_empty(struct sock *sk)
 
 static inline void tcp_push_pending_frames(struct sock *sk)
 {
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_push_pending_frames: sk: %p\n", sk);
+#endif
+
 	if (tcp_send_head(sk)) {
 		struct tcp_sock *tp = tcp_sk(sk);
 
