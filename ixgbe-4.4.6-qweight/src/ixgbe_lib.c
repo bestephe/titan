@@ -934,7 +934,7 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 	/* XXX: Interleaving must be disabled because we are lying about tx
 	 * queues and presenting a tx pool as a single queue.  Code below
 	 * assumes v_count == 1. */
-	BUG_ON(v_count != 1);
+	//BUG_ON(v_count != 1);
 
 	/* note this will allocate space for the ring structure as well! */
 	ring_count = txr_count + rxr_count;
@@ -1000,9 +1000,14 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 	/* intialize ITR */
 	if (txr_count && !rxr_count) {
 		/* tx only vector */
-		if (adapter->tx_itr_setting == 1)
-			q_vector->itr = IXGBE_12K_ITR;
-		else
+		if (adapter->tx_itr_setting == 1) {
+			/* Note: Decreasing the frequency of TX interrupts when
+			 * they are run in isolation seems like a dumb idea. */
+			/* Note: 12K ITR -> 83us between interrupts
+			 *       20K ITR -> 50us between interrupts */
+			//q_vector->itr = IXGBE_12K_ITR;
+			q_vector->itr = IXGBE_20K_ITR;
+		} else
 			q_vector->itr = adapter->tx_itr_setting;
 	} else {
 		/* rx or rx/tx vector */
@@ -1034,7 +1039,9 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 
 		/* update count and index */
 		txr_count--;
-		txr_idx += v_count;
+                /* XXX: Testing out only using rx interleaving. */
+		//txr_idx += v_count;
+		txr_idx += 1;
 
 		/* push pointer to next ring */
 		ring++;
@@ -1176,8 +1183,7 @@ static int ixgbe_alloc_q_vectors(struct ixgbe_adapter *adapter)
 		txr_remaining -= tqpv;
 		rxr_idx++;
 		txr_idx++;
-#endif
-
+#elif 0
 		pr_info(" calling: v_idx: %d, tqpv: %d, txr_idx: %d, rqpv: %d, rxr_idx: %d\n",
 			v_idx, tqpv, txr_idx, rqpv, rxr_idx);
 
@@ -1194,6 +1200,21 @@ static int ixgbe_alloc_q_vectors(struct ixgbe_adapter *adapter)
 		txr_remaining -= tqpv;
 		rxr_idx += rqpv;
 		txr_idx += tqpv;
+#else
+                /* XXX: Testing out only using rx interleaving. */
+		err = ixgbe_alloc_q_vector(adapter, q_vectors, v_idx,
+					   tqpv, txr_idx,
+					   rqpv, rxr_idx);
+
+		if (err)
+			goto err_out;
+
+		/* update counts and index */
+		rxr_remaining -= rqpv;
+		txr_remaining -= tqpv;
+		rxr_idx++;
+		txr_idx += tqpv;
+#endif
 	}
 
 	return IXGBE_SUCCESS;
