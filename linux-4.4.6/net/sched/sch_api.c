@@ -318,6 +318,7 @@ EXPORT_SYMBOL(qdisc_delaylist_try_add);
 void qdisc_delaylist_del(struct Qdisc *q)
 {
 	unsigned long flags;
+	/* TODO: Does this need to be spin_lock_bh (+ local_irq_save(flags)?)? */
 	spin_lock_irqsave(&q->delaylock, flags);
 
 	list_del_init(&q->delaylist);

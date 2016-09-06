@@ -74,7 +74,13 @@
 
 	It is easy to increase these values, but not in flight.  */
 
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+#define SFQ_MAX_DEPTH		255 /* max number of packets per flow */
+#else
 #define SFQ_MAX_DEPTH		127 /* max number of packets per flow */
+#endif
+
 #define SFQ_DEFAULT_FLOWS	128
 #define SFQ_MAX_FLOWS		(0x10000 - SFQ_MAX_DEPTH - 1) /* max number of flows */
 #define SFQ_EMPTY_SLOT		0xffff
@@ -113,6 +119,39 @@ struct sfq_slot {
 	struct red_vars vars;
 };
 
+#ifdef CONFIG_DQA
+struct sfq_sched_data {
+/* frequently used fields */
+	int		limit;		/* limit of total number of packets in this qdisc */
+	unsigned int	divisor;	/* number of slots in hash table */
+	sfq_index	headdrop;
+	sfq_index	maxdepth;	/* limit of packets per flow */
+
+	u32		perturbation;
+	sfq_index	cur_depth;	/* depth of longest slot */
+	u8		flags;
+	unsigned short  scaled_quantum; /* SFQ_ALLOT_SIZE(quantum) */
+	struct tcf_proto __rcu *filter_list;
+	sfq_index	*ht;		/* Hash table ('divisor' slots) */
+	struct sfq_slot	*slots;		/* Flows table ('maxflows' entries) */
+
+	struct red_parms *red_parms;
+	struct tc_sfqred_stats stats;
+	struct sfq_slot *tail;		/* current slot in round */
+
+	struct sfq_head	dep[SFQ_MAX_DEPTH + 1];
+					/* Linked lists of slots, indexed by depth
+					 * dep[0] : list of unused flows
+					 * dep[1] : list of flows with 1 packet
+					 * dep[X] : list of flows with X packets
+					 */
+
+	unsigned int	maxflows;	/* number of flows in flows array */
+	int		perturb_period;
+	unsigned int	quantum;	/* Allotment per round: MUST BE >= MTU */
+	struct timer_list perturb_timer;
+};
+#else
 struct sfq_sched_data {
 /* frequently used fields */
 	int		limit;		/* limit of total number of packets in this qdisc */
@@ -144,6 +183,7 @@ struct sfq_sched_data {
 	unsigned int	quantum;	/* Allotment per round: MUST BE >= MTU */
 	struct timer_list perturb_timer;
 };
+#endif
 
 /*
  * sfq_head are either in a sfq_slot or in dep[] array

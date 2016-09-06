@@ -999,6 +999,11 @@ static inline unsigned int tcp_left_out(const struct tcp_sock *tp)
  */
 static inline unsigned int tcp_packets_in_flight(const struct tcp_sock *tp)
 {
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_packets_in_flight: sk: %p, packets_out: %d, "
+	//	     "tcp_left_out: %d, retrans_out: %d\n", tp,
+	//	     tp->packets_out, tcp_left_out(tp), tp->retrans_out);
+#endif
 	return tp->packets_out - tcp_left_out(tp) + tp->retrans_out;
 }
 
@@ -1528,6 +1533,10 @@ static inline void __tcp_add_write_queue_tail(struct sock *sk, struct sk_buff *s
 static inline void tcp_add_write_queue_tail(struct sock *sk, struct sk_buff *skb)
 {
 	__tcp_add_write_queue_tail(sk, skb);
+
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_add_write_queue_tail: sk: %p\n", sk);
+#endif
 
 	/* Queue it, remembering where we must start sending. */
 	if (sk->sk_send_head == NULL) {

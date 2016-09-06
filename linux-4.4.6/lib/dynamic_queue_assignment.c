@@ -67,6 +67,7 @@ void dqa_update(struct net_device *dev)
 	for (i = 0; i < dev->num_tx_queues; i++) {
 		txq = &dev->_tx[i];
 		txq->dqa_queue.tx_overflowq = 0;
+		txq->dqa_queue.tx_qi = i;
 	}
 
 	/* Mark the XPS overflow queues. */
@@ -352,7 +353,15 @@ static int dqa_txq_needs_seg_overflowq(struct net_device *dev,
 {
 	/* Sanity checking probably not required. */
 	if (!txq->dqa_queue.tx_overflowq) {
-		BUG_ON(atomic_read(&txq->dqa_queue.tx_sk_enqcnt) > 1);
+		//BUG_ON(atomic_read(&txq->dqa_queue.tx_sk_enqcnt) > 1);
+		if (atomic_read(&txq->dqa_queue.tx_sk_enqcnt) > 1) {
+			//printk(KERN_ERR "non-overflowq has more than one sk. "
+			//       "enqcnt: %d\n",
+			//       atomic_read(&txq->dqa_queue.tx_sk_enqcnt));
+			trace_printk("non-overflowq has more than one sk. "
+				     "enqcnt: %d\n",
+				     atomic_read(&txq->dqa_queue.tx_sk_enqcnt));
+		}
 	}
 
 	return txq->dqa_queue.tx_overflowq;

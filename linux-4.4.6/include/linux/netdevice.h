@@ -594,6 +594,7 @@ struct dqa_queue {
 	//u8			tx_xps_overflowq;
 
 	/* XXX: DEBUG: */
+	int			tx_qi;
 	struct dqa_queue_trace	tx_sk_trace[DQA_TXQ_TRACE_MAX_ENTRIES];
 	atomic_t		tx_sk_trace_maxi;
 };

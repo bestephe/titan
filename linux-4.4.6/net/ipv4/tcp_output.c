@@ -89,14 +89,15 @@ static void tcp_event_new_data_sent(struct sock *sk, const struct sk_buff *skb)
 	struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int prior_packets = tp->packets_out;
 
-//#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
-	//trace_printk("tcp_event_new_data_sent: dev: %s, skb: %p, sk: %p\n",
-	//	     skb->dev->name, skb, sk);
-#endif
-
 	tcp_advance_send_head(sk, skb);
 	tp->snd_nxt = TCP_SKB_CB(skb)->end_seq;
+
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_event_new_data_sent: dev: %s, skb: %p, sk: %p, "
+	//	     "tp->snd_nxt: %u\n", skb->dev->name, skb, sk,
+	//	     tp->snd_nxt);
+#endif
 
 	tp->packets_out += tcp_skb_pcount(skb);
 	if (!prior_packets || icsk->icsk_pending == ICSK_TIME_EARLY_RETRANS ||
@@ -789,7 +790,8 @@ static bool tcp_tsq_handler(struct sock *sk, bool xmit_more)
 {
 	/* This likely has negative side-effects, but currently transmissions
 	 * stop and are broken if this is removed. */
-	int push_one = 1;
+	//int push_one = 1;
+	int push_one = 0;
 	bool ret;
 
 	if ((1 << sk->sk_state) &
@@ -1004,8 +1006,8 @@ static void tcp_tasklet_func(unsigned long data)
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	trace_printk("tcp_tasklet_func: end of function. num_sks: %d "
-		     "num_qdiscs: %d\n", num_sks, num_qdiscs);
+	//trace_printk("tcp_tasklet_func: end of function. num_sks: %d "
+	//	     "num_qdiscs: %d\n", num_sks, num_qdiscs);
 #endif
 }
 
@@ -1969,6 +1971,12 @@ static inline unsigned int tcp_cwnd_test(const struct tcp_sock *tp,
 
 	in_flight = tcp_packets_in_flight(tp);
 	cwnd = tp->snd_cwnd;
+
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_cwnd_test: sk: %p, in_flight: %d, cwnd: %d\n",
+	//	     tp, in_flight, cwnd);
+#endif
+
 	if (in_flight >= cwnd)
 		return 0;
 
@@ -2431,6 +2439,10 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 	sent_pkts = 0;
 
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_write_xmit: sk: %p\n", sk);
+#endif
+
 	if (!push_one) {
 		/* Do MTU probing. */
 		result = tcp_mtu_probe(sk);
@@ -2456,6 +2468,10 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 		cwnd_quota = tcp_cwnd_test(tp, skb);
 		if (!cwnd_quota) {
+#ifdef CONFIG_DQA
+			//trace_printk("tcp_write_xmit: sk: %p. !cwnd_quota\n",
+			//	     sk);
+#endif
 			if (push_one == 2)
 				/* Force out a loss probe pkt. */
 				cwnd_quota = 1;
@@ -2465,6 +2481,10 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		}
 
 		if (unlikely(!tcp_snd_wnd_test(tp, skb, mss_now))) {
+#ifdef CONFIG_DQA
+			//trace_printk("tcp_write_xmit: sk: %p. "
+			//	     "!tcp_snd_wnd_test\n", sk);
+#endif
 			break;
 		}
 
@@ -2472,12 +2492,20 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			if (unlikely(!tcp_nagle_test(tp, skb, mss_now,
 						     (tcp_skb_is_last(sk, skb) ?
 						      nonagle : TCP_NAGLE_PUSH)))) {
+#ifdef CONFIG_DQA
+				//trace_printk("tcp_write_xmit: sk: %p. "
+				//	     "!tcp_nagel_test\n", sk);
+#endif
 				break;
 			}
 		} else {
 			if (!push_one &&
 			    tcp_tso_should_defer(sk, skb, &is_cwnd_limited,
 						 max_segs)) {
+#ifdef CONFIG_DQA
+				//trace_printk("tcp_write_xmit: sk: %p. "
+				//	     "tso_should_defer\n", sk);
+#endif
 				break;
 			}
 		}
@@ -2492,6 +2520,10 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 		if (skb->len > limit &&
 		    unlikely(tso_fragment(sk, skb, limit, mss_now, gfp))) {
+#ifdef CONFIG_DQA
+				//trace_printk("tcp_write_xmit: sk: %p. "
+				//	     "tso_fragment error.\n", sk);
+#endif
 			break;
 		}
 
@@ -2546,12 +2578,15 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		 */
 		/* TODO: This could also be in another place.
 		 * tcp_data_snd_check? */
+		/* XXX: TODO: This check isn't necessary. I should seriously
+		 * think about remove this. */
 		/* This allows non-tasklet sends as long as it is already
 		 * enqueued. I don't really think this is what I want. */
 		if (!sock_owned_by_user(sk) &&
-		    !test_bit(TSQ_QUEUED, &tp->tsq_flags) &&
-		    !test_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
-		    !test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags)) {
+		    !test_bit(TSQ_QUEUED, &tp->tsq_flags) //&&
+		    //!test_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
+		    //!test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags)
+		    ) {
 			//trace_printk("tcp_write_xmit: about to delay. "
 			//	     "sk: %p, sk_wmem_alloc: %d, sk_state: %d, "
 			//	     "tcp_send_head: %p. TSQ_DEFERRED: %d\n",
@@ -2585,6 +2620,11 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 #endif
 
 		if (unlikely(tcp_transmit_skb(sk, skb, 1, gfp))) {
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+			trace_printk("tcp_write_xmit: sk: %p. ERROR TCP "
+				     "TRANSMIT SKB!\n", sk);
+#endif
 			break;
 		}
 
@@ -2607,10 +2647,10 @@ repair:
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-		trace_printk("tcp_write_xmit: sk: %p, sent_pkts: %d "
-			     "sock_owned_by_user: %d, sk_wmem_alloc: %d\n",
-			     sk, sent_pkts, sock_owned_by_user(sk),
-			     atomic_read(&sk->sk_wmem_alloc));
+		//trace_printk("tcp_write_xmit: sk: %p, sent_pkts: %d "
+		//	     "sock_owned_by_user: %d, sk_wmem_alloc: %d\n",
+		//	     sk, sent_pkts, sock_owned_by_user(sk),
+		//	     atomic_read(&sk->sk_wmem_alloc));
 #endif
 
 		/* Send one loss probe per tail loss episode. */

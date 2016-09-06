@@ -1701,6 +1701,10 @@ void sock_wfree(struct sk_buff *skb)
 	struct sock *sk = skb->sk;
 	unsigned int len = skb->truesize;
 
+#ifdef CONFIG_DQA
+	//trace_printk("sock_wfree: %p\n", sk);
+#endif
+
 	if (!sock_flag(sk, SOCK_USE_WRITE_QUEUE)) {
 		/*
 		 * Keep a reference on sk_wmem_alloc, this will be released

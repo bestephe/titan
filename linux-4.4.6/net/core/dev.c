@@ -3035,6 +3035,19 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 		//trace_printk("enqueuing skb: %p, xmit_more: %d, "
 		//	     "dqa_txq_needs_seg: %d\n", skb, skb->xmit_more,
 		//	     dqa_txq_needs_seg(dev, txq));
+
+		/* TODO: probably better with tcp_hdr(...) et al. Just debug though. */
+		//u32 seq_offset, seqno;
+                //seq_offset = skb_transport_offset (skb) + 4;
+		//seqno = be32_to_cpu(*((__be32 *) &skb->data[seq_offset]));
+		//trace_printk("enqueuing skb. sk: %p, seqno: %u\n",
+		//	     skb->sk, seqno);
+
+		//if (tcp_hdrlen(skb) >= seq_offset + 4) {
+		//	seqno = be32_to_cpu(*((__be32 *) &skb->data[seq_offset]));
+		//	trace_printk("enqueuing skb. sk: %p, seqno: %u\n",
+		//		     skb->sk, seqno);
+		//}
 #endif
 		rc = q->enqueue(skb, q) & NET_XMIT_MASK;
 
@@ -3062,7 +3075,7 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 				//	     "was: %p. will be: %p\n", skb->sk,
 				//	     skb->sk->delayq, delayq);
 				if (skb->sk->delayq != NULL && skb->sk->delayq != delayq) {
-					trace_printk("BUG! Overwriting delayq! "
+					trace_printk("BUG! Overwriting delayq! sk: %p "
 						     "was: %p. will be: %p\n", skb->sk,
 						     skb->sk->delayq, delayq);
 					printk(KERN_ERR "BUG! Overwriting delayq!\n");
@@ -3479,8 +3492,6 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 		features = netif_skb_features(skb);
 		if (dqa_txq_needs_seg(dev, txq) ||
 		    netif_needs_gso(skb, features) ||
-		    /* Always set by the tasklet now. Testing xmit_more seems incorrect */
-		    //skb->xmit_more || 
 		    /* XXX: Stale unused code now. */
 		    dev->dqa.qdisc_gso_size > 0) {
 
@@ -3539,7 +3550,21 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 				 * rc.  However, at this moment, I'm not sure
 				 * what rc should be if sending one skb fails.
 				 * */
-				rc = __dev_xmit_skb(skb, q, dev, txq);
+				/* XXX: This bug is worse than I thought.  If
+				 * we return busy, the, upper TCP stack will
+				 * not believe the data has been sent and will
+				 * try to resend the entire GSO segment.
+				 * However, if it doesn't do that, then it will
+				 * think that newly ACK'd data is invalid (even
+				 * worse!). */
+
+				/* Deliberately ignore the return value */
+				//rc = __dev_xmit_skb(skb, q, dev, txq);
+				__dev_xmit_skb(skb, q, dev, txq);
+				rc = NET_XMIT_SUCCESS;
+				//trace_printk("__dev_queue_xmit: running rc: %d, dev: %s, skb: %p, sk: %p, "
+				//	     "xmit_more: %d\n", rc, dev->name, skb, skb->sk,
+				//	     skb->xmit_more);
 				skb = next;
 			}
 		} else {

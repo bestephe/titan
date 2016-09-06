@@ -3545,6 +3545,12 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 		goto old_ack;
 	}
 
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_ack: sk: %p, ack: %u, tp->snd_nxt: %u. "
+	//	     "after(ack, tp->snd_nxt): %d\n", sk, ack, tp->snd_nxt,
+	//	     after(ack, tp->snd_nxt));
+#endif
+
 	/* If the ack includes data we haven't sent yet, discard
 	 * this segment (RFC793 Section 3.9).
 	 */
@@ -3628,6 +3634,11 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 	if (tp->tlp_high_seq)
 		tcp_process_tlp_ack(sk, ack, flag);
 
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_ack: sk: %p. may_raise_cwnd: %d\n", sk,
+	//	     tcp_may_raise_cwnd(sk, flag));
+#endif
+
 	/* Advance cwnd if state allows */
 	if (tcp_may_raise_cwnd(sk, flag)) {
 //#ifdef CONFIG_TCP_XMIT_BATCH
@@ -3649,6 +3660,10 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 	return 1;
 
 no_queue:
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_ack: sk: %p. no_queue!\n", sk);
+#endif
+
 	/* If data was DSACKed, see if we can undo a cwnd reduction. */
 	if (flag & FLAG_DSACKING_ACK)
 		tcp_fastretrans_alert(sk, acked, prior_unsacked,
@@ -3665,10 +3680,18 @@ no_queue:
 	return 1;
 
 invalid_ack:
+#ifdef CONFIG_DQA
+	trace_printk("tcp_ack: sk: %p. invalid_ack\n", sk);
+	printk(KERN_ERR "tcp_ack: sk: %p. invalid_ack\n", sk);
+#endif
 	SOCK_DEBUG(sk, "Ack %u after %u:%u\n", ack, tp->snd_una, tp->snd_nxt);
 	return -1;
 
 old_ack:
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_ack: sk: %p. old_ack\n", sk);
+#endif
+
 	/* If data was SACKed, tag it and see if we should send more data.
 	 * If data was DSACKed, see if we can undo a cwnd reduction.
 	 */
@@ -4930,6 +4953,10 @@ static void tcp_new_space(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_new_space: sk: %p\n", sk);
+#endif
+
 	if (tcp_should_expand_sndbuf(sk)) {
 		tcp_sndbuf_expand(sk);
 		tp->snd_cwnd_stamp = tcp_time_stamp;
@@ -4940,6 +4967,9 @@ static void tcp_new_space(struct sock *sk)
 
 static void tcp_check_space(struct sock *sk)
 {
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_check_space: sk: %p\n", sk);
+#endif
 	if (sock_flag(sk, SOCK_QUEUE_SHRUNK)) {
 		sock_reset_flag(sk, SOCK_QUEUE_SHRUNK);
 		/* pairs with tcp_poll() */
@@ -4956,6 +4986,7 @@ static inline void tcp_data_snd_check(struct sock *sk)
  * some more thought, it makes more sense to me to do this in tcp_write_xmit as
  * a check after the check for TCP small queues. */
 //#ifdef CONFIG_TCP_XMIT_BATCH
+//#if 0
 #ifdef CONFIG_DQA
 	/* TCP Xmit Batching :
 	 *
@@ -4972,8 +5003,8 @@ static inline void tcp_data_snd_check(struct sock *sk)
 	} else if (tcp_send_head(sk)) {
 		/* XXX: DEBUG */
 		struct tcp_sock *tp = tcp_sk(sk);
-		trace_printk("tcp_data_snd_check: about to delay "
-			     "tcp_push_pending_frames. sk: %p\n", sk);
+		//trace_printk("tcp_data_snd_check: about to delay "
+		//	     "tcp_push_pending_frames. sk: %p\n", sk);
 		//trace_printk("tcp_data_snd_check: about to delay "
 		//	     "tcp_push_pending_frames. sk: %p, "
 		//	     "sk_wmem_alloc: %d, sk_state: %d, "
@@ -4985,9 +5016,10 @@ static inline void tcp_data_snd_check(struct sock *sk)
 		/* If the sk is already throttled, queued, or deferred, then
 		 * there is nothing to do. The tasklet will handle sending
 		 * packets. */
-		if (!test_bit(TSQ_QUEUED, &tp->tsq_flags) &&
-		    !test_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
-		    !test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags)) {
+		if (!test_bit(TSQ_QUEUED, &tp->tsq_flags) //&&
+		    //!test_bit(TSQ_THROTTLED, &tp->tsq_flags) &&
+		    //!test_bit(TCP_TSQ_DEFERRED, &tp->tsq_flags)
+		    ) {
 
 			/* Now that the tcp tasklet is used for more than just
 			 * throttling, any tasklet uses that are not TCP Small queues

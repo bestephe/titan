@@ -142,10 +142,10 @@ struct sk_buff *tcp_gso_segment(struct sk_buff *skb,
 		if (copy_destructor) {
 #ifdef CONFIG_DQA
 			//BUG_ON(skb->sk != gso_skb->sk);
-			//if (skb->sk != gso_skb->sk) {
-			//	printk (KERN_ERR "tcp_gso_segment: skb->sk (%p) != "
-			//		"gso_skb->sk (%p)!\n", skb->sk, gso_skb->sk);
-			//}
+			if (skb->sk != gso_skb->sk) {
+				trace_printk("tcp_gso_segment: skb->sk (%p) != "
+					"gso_skb->sk (%p)!\n", skb->sk, gso_skb->sk);
+			}
 #endif
 			skb->destructor = gso_skb->destructor;
 			skb->sk = gso_skb->sk;
@@ -175,7 +175,9 @@ struct sk_buff *tcp_gso_segment(struct sk_buff *skb,
 		//	printk (KERN_ERR "tcp_gso_segment: skb->sk (%p) != "
 		//		"gso_skb->sk (%p)!\n", skb->sk, gso_skb->sk);
 		//}
-		skb->sk = gso_skb->sk;
+		/* XXX: I think this is causing a bug? */
+		//skb->sk = gso_skb->sk;
+		swap(gso_skb->sk, skb->sk);
 #else
 		swap(gso_skb->sk, skb->sk);
 #endif

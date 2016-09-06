@@ -1096,6 +1096,10 @@ int tcp_sendmsg(struct sock *sk, struct msghdr *msg, size_t size)
 	bool sg;
 	long timeo;
 
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_sendmsg: sk: %p, size: %ld\n", sk, size);
+#endif
+
 	lock_sock(sk);
 
 	flags = msg->msg_flags;
@@ -1266,8 +1270,14 @@ new_segment:
 		continue;
 
 wait_for_sndbuf:
+#ifdef CONFIG_DQA
+		//trace_printk("tcp_sendmsg: sk: %p. wait_for_sndbuf\n", sk);
+#endif
 		set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
 wait_for_memory:
+#ifdef CONFIG_DQA
+		//trace_printk("tcp_sendmsg: sk: %p. wait_for_memory\n", sk);
+#endif
 		if (copied)
 			tcp_push(sk, flags & ~MSG_MORE, mss_now,
 				 TCP_NAGLE_PUSH, size_goal);
@@ -1280,13 +1290,22 @@ wait_for_memory:
 	}
 
 out:
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_sendmsg: sk: %p. out\n", sk);
+#endif
 	if (copied)
 		tcp_push(sk, flags, mss_now, tp->nonagle, size_goal);
 out_nopush:
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_sendmsg: sk: %p. out_nopush\n", sk);
+#endif
 	release_sock(sk);
 	return copied + copied_syn;
 
 do_fault:
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_sendmsg: sk: %p. do_fault\n", sk);
+#endif
 	if (!skb->len) {
 		tcp_unlink_write_queue(skb, sk);
 		/* It is the one place in all of TCP, except connection
@@ -1297,14 +1316,25 @@ do_fault:
 	}
 
 do_error:
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_sendmsg: sk: %p. do_error\n", sk);
+#endif
 	if (copied + copied_syn)
 		goto out;
 out_err:
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_sendmsg: sk: %p. out_error\n", sk);
+#endif
 	err = sk_stream_error(sk, flags, err);
 	/* make sure we wake any epoll edge trigger waiter */
 	if (unlikely(skb_queue_len(&sk->sk_write_queue) == 0 && err == -EAGAIN))
 		sk->sk_write_space(sk);
 	release_sock(sk);
+
+#ifdef CONFIG_DQA
+	//trace_printk("tcp_sendmsg: sk: %p, err: %d\n", sk, err);
+#endif
+
 	return err;
 }
 EXPORT_SYMBOL(tcp_sendmsg);
