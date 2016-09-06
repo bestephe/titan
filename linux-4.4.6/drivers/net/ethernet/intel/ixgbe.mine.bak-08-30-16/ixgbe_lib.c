@@ -609,6 +609,12 @@ static bool ixgbe_set_rss_queues(struct ixgbe_adapter *adapter)
 	f = &adapter->ring_feature[RING_F_RSS];
 	rss_i = f->limit;
 
+        pr_info ("ixgbe_set_rss_queues:\n");
+        pr_info (" rss_i: %d\n", rss_i);
+
+        /* TODO: If we want more ethan 16Qs, then I think we will have to
+         * change f->mask as well. */
+
 	f->indices = rss_i;
 	f->mask = IXGBE_RSS_16Q_MASK;
 
@@ -642,6 +648,8 @@ static bool ixgbe_set_rss_queues(struct ixgbe_adapter *adapter)
 		struct net_device *dev = adapter->netdev;
 		u16 fcoe_i;
 
+                pr_info ("ixgbe_set_rss_queues: fcoe enabled!\n");
+
 		f = &adapter->ring_feature[RING_F_FCOE];
 
 		/* merge FCoE queues with RSS queues */
@@ -661,6 +669,9 @@ static bool ixgbe_set_rss_queues(struct ixgbe_adapter *adapter)
 #endif /* IXGBE_FCOE */
 	adapter->num_rx_queues = rss_i;
 	adapter->num_tx_queues = rss_i;
+
+        pr_info ("ixgbe_set_rss_queues: %d queues\n",
+                 adapter->num_rx_queues);
 
 	return true;
 }
@@ -684,6 +695,9 @@ static void ixgbe_set_num_queues(struct ixgbe_adapter *adapter)
 	adapter->num_rx_pools = adapter->num_rx_queues;
 	adapter->num_rx_queues_per_pool = 1;
 
+        pr_info ("ixgbe_set_num_queues: RING_F_RSS.limit: %d\n",
+                 adapter->ring_feature[RING_F_RSS].limit);
+
 #ifdef CONFIG_IXGBE_DCB
 	if (ixgbe_set_dcb_sriov_queues(adapter))
 		return;
@@ -696,6 +710,10 @@ static void ixgbe_set_num_queues(struct ixgbe_adapter *adapter)
 		return;
 
 	ixgbe_set_rss_queues(adapter);
+
+        pr_info ("ixgbe_set_num_queues END:\n");
+        pr_info (" adapter->num_rx_queues: %d\n", adapter->num_rx_queues);
+        pr_info (" adapter->num_tx_queues: %d\n", adapter->num_tx_queues);
 }
 
 /**
@@ -1197,6 +1215,68 @@ void ixgbe_clear_interrupt_scheme(struct ixgbe_adapter *adapter)
 
 	ixgbe_free_q_vectors(adapter);
 	ixgbe_reset_interrupt_capability(adapter);
+}
+
+void ixgbe_tx_nulldesc(struct ixgbe_ring *tx_ring, u16 desc_i)
+{
+	union ixgbe_adv_tx_desc *tx_desc;
+
+        /* IXGBE_ADVTXD_DCMD_RS is ignored in null descriptors. Set it
+         * anyways? */
+        u32 cmd_type = IXGBE_ADVTXD_DTYP_DATA |
+                       IXGBE_ADVTXD_DCMD_DEXT |
+                       IXGBE_ADVTXD_DCMD_EOP |
+                       IXGBE_ADVTXD_DCMD_RS |
+                       IXGBE_ADVTXD_DCMD_IFCS;
+
+        tx_desc = IXGBE_TX_DESC(tx_ring, desc_i);
+
+        tx_desc->read.buffer_addr = cpu_to_le64(0);
+        tx_desc->read.cmd_type_len = cpu_to_le32(cmd_type);
+        tx_desc->read.olinfo_status = cpu_to_le32(0);
+}
+
+int ixgbe_is_tx_nulldesc(union ixgbe_adv_tx_desc *tx_desc)
+{
+        /* This function could check things about cmd_type, but no valid
+         * descriptor should ever have a buffer addr of zero, so the current
+         * assertion should suffice. */
+
+        //XXX: DEBUG
+        //pr_info ("ixgbe_is_tx_nulldesc:\n");
+        //pr_info (" buffer_addr: %llu, olinfo_status: %u\n",
+        //         tx_desc->read.buffer_addr, tx_desc->read.olinfo_status);
+
+        /* olinfo_status can actually get the DD bit set, despite what the
+         * datasheet says.  This makes this code incorrect.  Again, more could
+         * be asserted about what olinfo_status looks like, but no valid
+         * descriptor should ever have a buffer_addr of 0, so I think we should
+         * be fine for now. */
+        //if (tx_desc->read.buffer_addr == cpu_to_le64(0) &&
+        //    tx_desc->read.olinfo_status == cpu_to_le32(0))
+        //        return 1;
+
+        if (tx_desc->read.buffer_addr == cpu_to_le64(0))
+                return 1;
+
+        return 0;
+}
+
+void ixgbe_tx_ctxtdesc_ntu(struct ixgbe_ring *tx_ring, u32 vlan_macip_lens,
+		           u32 fcoe_sof_eof, u32 type_tucmd,
+                           u32 mss_l4len_idx, u16 ntu)
+{
+	struct ixgbe_adv_tx_context_desc *context_desc;
+
+	context_desc = IXGBE_TX_CTXTDESC(tx_ring, ntu);
+
+	/* set bits to identify this as an advanced context descriptor */
+	type_tucmd |= IXGBE_TXD_CMD_DEXT | IXGBE_ADVTXD_DTYP_CTXT;
+
+	context_desc->vlan_macip_lens	= cpu_to_le32(vlan_macip_lens);
+	context_desc->seqnum_seed	= cpu_to_le32(fcoe_sof_eof);
+	context_desc->type_tucmd_mlhl	= cpu_to_le32(type_tucmd);
+	context_desc->mss_l4len_idx	= cpu_to_le32(mss_l4len_idx);
 }
 
 void ixgbe_tx_ctxtdesc(struct ixgbe_ring *tx_ring, u32 vlan_macip_lens,

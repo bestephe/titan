@@ -3101,6 +3101,9 @@ static int ixgbe_set_channels(struct net_device *dev,
 	adapter->ring_feature[RING_F_FCOE].limit = count;
 
 #endif
+        //XXX: DEBUG
+        pr_info ("ixgbe_set_channels: limit = %d\n", count);
+
 	/* use setup TC to update any traffic class queue mapping */
 	return ixgbe_setup_tc(dev, netdev_get_num_tc(dev));
 }
