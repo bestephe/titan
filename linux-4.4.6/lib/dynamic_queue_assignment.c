@@ -103,6 +103,8 @@ void dqa_init(struct net_device *dev)
 	dqa->dqa_alg = DQA_ALG_HASH;
 	dqa->segment_sharedq = 0;
 
+	spin_lock_init(&dqa->oq_lock);
+
 	dqa_update(dev);
 }
 EXPORT_SYMBOL(dqa_init);

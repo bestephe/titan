@@ -856,7 +856,10 @@ static bool tcp_tasklet_snd_test(struct sock *sk) {
  * transferring tsq->head because tcp_wfree() might
  * interrupt us (non NAPI drivers)
  */
-/* XXX: Why is this a tasklet? I think it should be a softIRQ. */
+/* XXX: Why is this a tasklet? I think it should be a softIRQ. Ah, its a
+ * tasklet PER-CPU.  However, if I'm correct, then this means that tcp tasklets
+ * on different CPUs still exclude each other? If each core runs its own
+ * tasklet queue then this wouldn't be the case though.  */
 static void tcp_tasklet_func(unsigned long data)
 {
 	struct tsq_tasklet *tsq = (struct tsq_tasklet *)data;
@@ -874,6 +877,8 @@ static void tcp_tasklet_func(unsigned long data)
 	/* DEBUG */
 	int num_sks = 0;
 	int num_qdiscs = 0;
+
+	trace_printk("tcp_tasklet_func: start of function.\n");
 #endif
 
 	local_irq_save(flags);
@@ -889,8 +894,8 @@ static void tcp_tasklet_func(unsigned long data)
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
 		/* XXX: DEBUG */
-		//trace_printk("tcp_tasklet_func: sk: %p, sk_wmem_alloc: %d\n",
-		//	     sk, atomic_read(&sk->sk_wmem_alloc));
+		trace_printk("tcp_tasklet_func: sk: %p, sk_wmem_alloc: %d\n",
+			     sk, atomic_read(&sk->sk_wmem_alloc));
 		num_sks++;
 #endif
 
@@ -983,8 +988,8 @@ static void tcp_tasklet_func(unsigned long data)
 		delayq = list_entry(q, struct Qdisc, delaylist);
 
 		/* XXX: DEBUG. */
-		//trace_printk("tcp_tasklet_func: now running delayq: %p\n",
-		//	     delayq);
+		trace_printk("tcp_tasklet_func: now running delayq: %p\n",
+			     delayq);
 
 		/* Remove from the list before scheduling to avoid race
 		 * conditions.  If we removed after, racing could cause Qdisc
@@ -1006,8 +1011,8 @@ static void tcp_tasklet_func(unsigned long data)
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	//trace_printk("tcp_tasklet_func: end of function. num_sks: %d "
-	//	     "num_qdiscs: %d\n", num_sks, num_qdiscs);
+	trace_printk("tcp_tasklet_func: end of function. num_sks: %d "
+		     "num_qdiscs: %d\n", num_sks, num_qdiscs);
 #endif
 }
 
@@ -2553,9 +2558,9 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-			//trace_printk("tcp_write_xmit: sk: %p THROTTLED! "
-			//	     "sk_wmem_alloc: %d, limit: %d\n", sk,
-			//	     atomic_read(&sk->sk_wmem_alloc), limit);
+			trace_printk("tcp_write_xmit: sk: %p THROTTLED! "
+				     "sk_wmem_alloc: %d, limit: %d\n", sk,
+				     atomic_read(&sk->sk_wmem_alloc), limit);
 #endif
 
 			/* It is possible TX completion already happened
@@ -2647,10 +2652,10 @@ repair:
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-		//trace_printk("tcp_write_xmit: sk: %p, sent_pkts: %d "
-		//	     "sock_owned_by_user: %d, sk_wmem_alloc: %d\n",
-		//	     sk, sent_pkts, sock_owned_by_user(sk),
-		//	     atomic_read(&sk->sk_wmem_alloc));
+		trace_printk("tcp_write_xmit: sk: %p, sent_pkts: %d "
+			     "sock_owned_by_user: %d, sk_wmem_alloc: %d\n",
+			     sk, sent_pkts, sock_owned_by_user(sk),
+			     atomic_read(&sk->sk_wmem_alloc));
 #endif
 
 		/* Send one loss probe per tail loss episode. */

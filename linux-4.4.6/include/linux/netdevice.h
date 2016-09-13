@@ -593,6 +593,12 @@ struct dqa_queue {
 	u8			tx_overflowq;
 	//u8			tx_xps_overflowq;
 
+	/* Use different lists for XPS and non-XPS because both can be in use
+	 * at the same time. */
+	/* XXX: TODO: I'm not sure this is the best approach... */
+	struct list_head	tx_overflowq_list;
+	struct list_head	tx_overflowq_xps_list;
+
 	/* XXX: DEBUG: */
 	int			tx_qi;
 	struct dqa_queue_trace	tx_sk_trace[DQA_TXQ_TRACE_MAX_ENTRIES];
@@ -601,6 +607,10 @@ struct dqa_queue {
 
 struct dqa {
 	unsigned char		dqa_alg;
+
+	/* Spinlock for the overflowq implementation. */
+	spinlock_t		oq_lock;
+
 	/* XXX: This should be part of priv_flags. */
 	unsigned char		segment_sharedq;
 	/* This isn't used anymore. */
@@ -1998,6 +2008,10 @@ static inline void netdev_update_txq_weight(struct net_device *dev,
 					    int queue_index,
 					    int enqcnt)
 {
+	trace_printk("netdev_update_txq_weight: dev: %s, txq-%d: enqcnt: %d, "
+		     "ndo_set_tx_weight: %p\n", dev->name, queue_index,
+		     enqcnt, dev->netdev_ops->ndo_set_tx_weight);
+
 	if (dev->netdev_ops->ndo_set_tx_weight) {
 		if (enqcnt > 1) {
 			dev->netdev_ops->ndo_set_tx_weight(dev, queue_index,
@@ -2890,6 +2904,13 @@ static inline void netdev_tx_sent_queue(struct netdev_queue *dev_queue,
 					unsigned int bytes)
 {
 #ifdef CONFIG_BQL
+
+/* XXX: DEBUG */
+#ifdef CONFIG_DQA
+	trace_printk("netdev_tx_sent_queue: dev: %s, txq-%d: bytes: %u\n",
+		     dev_queue->dev->name, dev_queue->dqa_queue.tx_qi, bytes);
+#endif
+
 	dql_queued(&dev_queue->dql, bytes);
 
 	if (likely(dql_avail(&dev_queue->dql) >= 0))
@@ -2930,6 +2951,12 @@ static inline void netdev_tx_completed_queue(struct netdev_queue *dev_queue,
 #ifdef CONFIG_BQL
 	if (unlikely(!bytes))
 		return;
+
+/* XXX: DEBUG */
+#ifdef CONFIG_DQA
+	trace_printk("netdev_tx_completed_queue: dev: %s, txq-%d: bytes: %u\n",
+		     dev_queue->dev->name, dev_queue->dqa_queue.tx_qi, bytes);
+#endif
 
 	dql_completed(&dev_queue->dql, bytes);
 

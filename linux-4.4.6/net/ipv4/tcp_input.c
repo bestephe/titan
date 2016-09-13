@@ -3641,11 +3641,14 @@ static int tcp_ack(struct sock *sk, const struct sk_buff *skb, int flag)
 
 	/* Advance cwnd if state allows */
 	if (tcp_may_raise_cwnd(sk, flag)) {
+		tcp_cong_avoid(sk, ack, acked);
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-		//trace_printk("tcp_ack: Advancing cwnd. sk: %p\n", sk);
+		trace_printk("tcp_ack: Advancing cwnd. sk: %p, "
+			     "sk_wmem_alloc: %d, cwnd: %d\n", sk,
+			     atomic_read(&sk->sk_wmem_alloc),
+			     tcp_packets_in_flight(tp) - tp->snd_cwnd);
 #endif
-		tcp_cong_avoid(sk, ack, acked);
 	}
 
 	if ((flag & FLAG_FORWARD_PROGRESS) || !(flag & FLAG_NOT_DUP)) {

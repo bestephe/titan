@@ -687,6 +687,12 @@ void skb_dequeue_from_sk(struct sk_buff *skb)
 			/* XXX: This code being here in the skbuff file seems like the
 			 * wrong location to me. */
 			if (sk_tx_deq_and_test(skb->sk, skb)) {
+
+				/* XXX: DEBUG: Uncomment sometime later! */
+				//trace_printk("skb_dequeue_from_sk: sk: %p, "
+				//	     "skipping clearing the tx "
+				//	     "queue!\n");
+
 				sk_tx_queue_clear(skb->sk);
 
 				/* XXX: UGLY: currently, sk_tx_queue_clear
@@ -803,8 +809,8 @@ void kfree_skb(struct sk_buff *skb)
 		return;
 	trace_kfree_skb(skb, __builtin_return_address(0));
 #ifdef CONFIG_DQA
-	//trace_printk("kfree_skb: dev: %s, skb: %p, sk: %p\n",
-	//	     skb->dev->name, skb, skb->sk);
+	trace_printk("kfree_skb: dev: %s, skb: %p, sk: %p\n",
+		     skb->dev->name, skb, skb->sk);
 #endif
 	__kfree_skb(skb);
 }

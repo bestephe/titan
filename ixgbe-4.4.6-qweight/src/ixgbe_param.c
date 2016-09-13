@@ -1137,6 +1137,9 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 				break;
 			default:
 				ixgbe_validate_option(&itr, &opt);
+				DPRINTK(PROBE, INFO, "static interrupt "
+					"throttling enabled: %d ITRPS\n",
+					itr);
 				/* the first bit is used as control */
 				adapter->rx_itr_setting = (1000000/itr) << 2;
 				break;

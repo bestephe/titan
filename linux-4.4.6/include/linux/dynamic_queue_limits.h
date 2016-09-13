@@ -71,6 +71,15 @@ struct dql {
  */
 static inline void dql_queued(struct dql *dql, unsigned int count)
 {
+/* XXX: DEBUG */
+#ifdef CONFIG_DQA
+	unsigned int inprogress, completed, num_queued;
+	completed = dql->num_completed;
+	num_queued = dql->num_queued + count;
+	inprogress = num_queued - completed;
+	trace_printk("dql_queued: inprogress: %d\n", inprogress);
+#endif
+
 	BUG_ON(count > DQL_MAX_OBJECT);
 
 	dql->last_obj_cnt = count;

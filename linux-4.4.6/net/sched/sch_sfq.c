@@ -337,6 +337,15 @@ static unsigned int sfq_drop(struct Qdisc *sch)
 	unsigned int len;
 	struct sfq_slot *slot;
 
+/* XXX: DEBUG */
+#ifdef CONFIG_DQA
+	const struct netdev_queue *txq = sch->dev_queue;
+	printk(KERN_ERR "sfq_drop: qdisc: q: %p (txq-%d), qlen: %d\n", sch,
+	       txq->dqa_queue.tx_qi, qdisc_qlen(sch));
+	trace_printk("sfq_drop: qdisc: q: %p (txq-%d), qlen: %d\n", sch,
+		     txq->dqa_queue.tx_qi, qdisc_qlen(sch));
+#endif
+
 	/* Queue is full! Find the longest slot and drop tail packet from it */
 	if (d > 1) {
 		x = q->dep[d].next;
@@ -466,7 +475,7 @@ congestion_drop:
 #ifdef CONFIG_DQA
 		/* XXX: DEBUG: I don't want packets being dropped. */
 		printk(KERN_ERR "sfq_enqueue: congestion drop!\n");
-		trace_printk("sfq_enqueue: congestion drop!\n");
+		trace_printk("sfq_enqueue: qdisc: congestion drop!\n");
 #endif
 
 		if (!sfq_headdrop(q))
@@ -490,11 +499,16 @@ enqueue:
 	sfq_inc(q, x);
 	if (slot->qlen == 1) {		/* The flow is new */
 #ifdef CONFIG_DQA
-		//trace_printk("sfq_enqueue: first packet for sk: %p\n", skb->sk);
+		const struct netdev_queue *txq = sch->dev_queue;
+		trace_printk("sfq_enqueue: qdisc: first packet for sk: %p, "
+			     "q: %p (txq-%d), qlen: %d\n", skb->sk, sch,
+			     txq->dqa_queue.tx_qi, qdisc_qlen(sch));
 #endif
 		if (q->tail == NULL) {	/* It is the first flow */
 #ifdef CONFIG_DQA
-		//trace_printk("sfq_enqueue: first active flow\n");
+			trace_printk("sfq_enqueue: qdisc: first active flow, "
+				     "q: %p (txq-%d), qlen: %d\n", sch,
+				     txq->dqa_queue.tx_qi, qdisc_qlen(sch));
 #endif
 			slot->next = x;
 		} else {
@@ -560,13 +574,18 @@ next_slot:
 	/* Is the slot empty? */
 	if (slot->qlen == 0) {
 #ifdef CONFIG_DQA
-		//trace_printk("sfq_dequeue: last packet for sk: %p\n", skb->sk);
+		const struct netdev_queue *txq = sch->dev_queue;
+		trace_printk("sfq_enqueue: qdisc: last packet for sk: %p, "
+			     "q: %p (txq-%d), qlen: %d\n", skb->sk, sch,
+			     txq->dqa_queue.tx_qi, qdisc_qlen(sch));
 #endif
 		q->ht[slot->hash] = SFQ_EMPTY_SLOT;
 		next_a = slot->next;
 		if (a == next_a) {
 #ifdef CONFIG_DQA
-			//trace_printk("sfq_dequeue: no more active slots\n");
+			trace_printk("sfq_dequeue: qdisc: no more active "
+				     "flows. q: %p (txq-%d), qlen: %d\n", sch,
+				     txq->dqa_queue.tx_qi, qdisc_qlen(sch));
 #endif
 			q->tail = NULL; /* no more active slots */
 			return skb;

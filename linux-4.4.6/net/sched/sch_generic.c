@@ -76,7 +76,7 @@ static void try_bulk_dequeue_skb(struct Qdisc *q,
 	skb->next = NULL;
 
 #ifdef CONFIG_DQA
-	trace_printk("try_bulk_dequeue_skb: q: %p (txq-%d), qlen: %d, "
+	trace_printk("try_bulk_dequeue_skb: qdisc: q: %p (txq-%d), qlen: %d, "
 		     "bytes dequeued: %d\n", q, txq->dqa_queue.tx_qi,
 		     qdisc_qlen(q),
 		     qdisc_avail_bulklimit(txq) - bytelimit);
@@ -251,7 +251,7 @@ void __qdisc_run(struct Qdisc *q)
 /* XXX: DEBUG */
 #ifdef CONFIG_DQA
 	const struct netdev_queue *txq = q->dev_queue;
-	trace_printk("__qdisc_run: q: %p (txq-%d), qlen: %d, "
+	trace_printk("__qdisc_run: qdisc: q: %p (txq-%d), qlen: %d, "
 		     "avail_bulklimit: %d, is_throttled: %d\n",
 		     q, txq->dqa_queue.tx_qi, qdisc_qlen(q),
 		     qdisc_avail_bulklimit(txq),

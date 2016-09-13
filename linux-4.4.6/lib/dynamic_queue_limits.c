@@ -34,7 +34,7 @@ void dql_completed(struct dql *dql, unsigned int count)
 
 /* XXX: DEBUG */
 #ifdef CONFIG_DQA
-	//trace_printk("dql_completed: inprogress: %d\n", inprogress);
+	trace_printk("dql_completed: inprogress: %d\n", inprogress);
 #endif
 
 	if ((ovlimit && !inprogress) ||

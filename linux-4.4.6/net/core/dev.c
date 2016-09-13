@@ -3200,12 +3200,21 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 	int queue_index = sk_tx_queue_get(sk);
 
 #ifdef CONFIG_DQA
-	unsigned long flags;
+	unsigned long flags, oq_flags;
 	bool slow;
 #endif
 
 	if (queue_index < 0 || skb->ooo_okay ||
 	    queue_index >= dev->real_num_tx_queues) {
+#ifdef CONFIG_DQA
+		/* Lock here to avoid DQA races. Currently only matters for the
+		 * overflowq. */
+		/* XXX: This code breaks isolation. */
+		if (dev->dqa.dqa_alg == DQA_ALG_OVERFLOWQ) {
+			spin_lock_irqsave(&dev->dqa.oq_lock, oq_flags);
+		}
+#endif
+
 		int new_index = get_xps_queue(dev, skb);
 #ifdef CONFIG_DQA
 		if (new_index < 0)
@@ -3309,6 +3318,13 @@ static u16 __netdev_pick_tx(struct net_device *dev, struct sk_buff *skb)
 		queue_index = new_index;
 
 #ifdef CONFIG_DQA
+		/* Unlock here to avoid DQA races. Currently only matters for
+		 * the overflowq. */
+		/* XXX: This code breaks isolation. */
+		if (dev->dqa.dqa_alg == DQA_ALG_OVERFLOWQ) {
+			spin_unlock_irqrestore(&dev->dqa.oq_lock, oq_flags);
+		}
+
 		/* XXX: DEBUG */
 		trace_printk("__netdev_pick_tx: sk: %p. new_index: %d\n", sk, new_index);
 #endif

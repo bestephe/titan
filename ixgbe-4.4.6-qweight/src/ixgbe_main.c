@@ -785,6 +785,9 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 	tx_desc = IXGBE_TX_DESC(tx_ring, i);
 	i -= tx_ring->count;
 
+	//trace_printk("ixgbe_clean_tx_irq: dev: %s, queue: %d "
+	//	     "(os queue: %d)\n", netdev_ring(tx_ring)->name,
+	//	     tx_ring->queue_index, tx_ring->netdev_queue_index);
 	//if (tx_buffer->next_to_watch) {
 	//	trace_printk("ixgbe_clean_tx_irq: work pending! dev: %s, "
 	//		     "queue: %d (os queue: %d)\n",
@@ -2676,6 +2679,9 @@ int ixgbe_poll(struct napi_struct *napi, int budget)
 	struct ixgbe_ring *ring;
 	int per_ring_budget;
 	bool clean_complete = true;
+
+	/* XXX: DEBUG */
+	trace_printk("ixgbe_poll: name: %s\n", q_vector->name);
 
 #if IS_ENABLED(CONFIG_DCA)
 	if (adapter->flags & IXGBE_FLAG_DCA_ENABLED)
@@ -10169,6 +10175,10 @@ xmit_fcoe:
 	return NETDEV_TX_OK;
 
 out_drop:
+	/* DEBUG */
+	trace_printk("ixgbe_xmit_frame_ring: out_drop! skb: %p, txq-%d\n", 
+		     first->skb, tx_ring->netdev_queue_index);
+
 	dev_kfree_skb_any(first->skb);
 	first->skb = NULL;
 
@@ -10941,6 +10951,7 @@ ixgbe_set_tx_weight(struct net_device *netdev, int queue_index, u32 weight)
 	int pool_index = queue_index;
 	int err = 0;
 	u16 min_credit;
+	u16 adj_weight;
 
 	/* This function assumes weights are based on pool indexes because VDMq
 	 * is enabled */
@@ -10948,11 +10959,21 @@ ixgbe_set_tx_weight(struct net_device *netdev, int queue_index, u32 weight)
 
 	/* BS: I need to put more thought into converting from weights to
 	 * refill credits. */
-	min_credit = IXGBE_MIN_WRR_CREDIT(netdev);
+	//min_credit = IXGBE_MIN_WRR_CREDIT(netdev) >> 2;
+	min_credit = IXGBE_MIN_WRR_CREDIT(netdev); 
+	adj_weight = weight * min_credit;
 
 	/* Note: Because VMDq is enabled, weights are configured based on pool
 	 * indexes */
-	ixgbe_set_txq_credits(&adapter->hw, pool_index, weight * min_credit);
+	ixgbe_set_txq_credits(&adapter->hw, pool_index, adj_weight);
+
+	/* XXX: DEBUG */
+	trace_printk("ixgbe_set_tx_weight: txq-%d: weight: %u, "
+		     "min_credit: %u, adj_weight: %u\n", queue_index,
+		     weight, min_credit, adj_weight);
+	//pr_err("ixgbe_set_tx_weight: txq-%d: weight: %u, "
+	//	     "min_credit: %u, adj_weight: %u\n", queue_index,
+	//	     weight, min_credit, adj_weight);
 
 	/* XXX: This function should maybe fail if weight is too large. */
 
@@ -11398,6 +11419,9 @@ static int __devinit ixgbe_probe(struct pci_dev *pdev,
 	 * hw->fc completely
 	 */
 	ixgbe_check_options(adapter);
+
+	/* XXX: HACK for having WRR being an option. */
+	ixgbe_assign_netdev_ops(netdev);
 
 	/* reset_hw fills in the perm_addr as well */
 	hw->phy.reset_if_overtemp = true;
