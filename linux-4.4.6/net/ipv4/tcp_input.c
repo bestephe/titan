@@ -4983,24 +4983,27 @@ static void tcp_check_space(struct sock *sk)
 	}
 }
 
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
 static inline void tcp_data_snd_check(struct sock *sk)
 {
-/* XXX: I haven't been able to get this to work when implemented here.  After
- * some more thought, it makes more sense to me to do this in tcp_write_xmit as
- * a check after the check for TCP small queues. */
-//#ifdef CONFIG_TCP_XMIT_BATCH
-//#if 0
-#ifdef CONFIG_DQA
 	/* TCP Xmit Batching :
 	 *
 	 * Due to interrupt coalescing and LRO/GRO, it may be likely that ACKs
 	 * for multiple flows are delivered at once.  If this is the case, we
 	 * would like to xmit these sockets at once in a batch so that we can
-	 * improve fairness. */
+	 * improve fairness.
+	 *
+	 * However, if there is a free queue with no backlog in its qdisc, then
+	 * it is better to send as soon as possible.  I'm currently thinking
+	 * that the best thing there could be to do in this code path is to
+	 * remember the qdisc and pump it in the tasklet if it needs to be
+	 * pumped.
+	 */
 
 	/* XXX: This sock_owned_by_user check is likely not needed */
 	/* TODO: experiment with this. */
-	//if (0) {
+#if 0
 	if (sock_owned_by_user(sk)) {
 		tcp_push_pending_frames(sk);
 	} else if (tcp_send_head(sk)) {
@@ -5039,6 +5042,13 @@ static inline void tcp_data_snd_check(struct sock *sk)
 #endif
 	tcp_check_space(sk);
 }
+#else
+static inline void tcp_data_snd_check(struct sock *sk)
+{
+	tcp_push_pending_frames(sk);
+	tcp_check_space(sk);
+}
+#endif
 
 /*
  * Check if sending an ack is needed.

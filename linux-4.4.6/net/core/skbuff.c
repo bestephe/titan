@@ -809,8 +809,8 @@ void kfree_skb(struct sk_buff *skb)
 		return;
 	trace_kfree_skb(skb, __builtin_return_address(0));
 #ifdef CONFIG_DQA
-	trace_printk("kfree_skb: dev: %s, skb: %p, sk: %p\n",
-		     skb->dev->name, skb, skb->sk);
+	trace_printk("kfree_skb: dev: %s, sk: %p, skb: %p\n",
+		     skb->dev->name, skb->sk, skb);
 #endif
 	__kfree_skb(skb);
 }
@@ -865,8 +865,8 @@ void consume_skb(struct sk_buff *skb)
 		return;
 	trace_consume_skb(skb);
 #ifdef CONFIG_DQA
-	//trace_printk("consume_skb: dev: %s, skb: %p, sk: %p\n",
-	//	     skb->dev->name, skb, skb->sk);
+	trace_printk("consume_skb: dev: %s, sk: %p, skb: %p\n",
+		     skb->dev->name, skb->sk, skb);
 #endif
 	__kfree_skb(skb);
 }

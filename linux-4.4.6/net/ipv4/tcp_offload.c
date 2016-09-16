@@ -81,6 +81,11 @@ struct sk_buff *tcp_gso_segment(struct sk_buff *skb,
 	if (unlikely(skb->len <= mss))
 		goto out;
 
+#ifdef CONFIG_DQA
+	trace_printk("tcp_gso_segment: skb: %p, skb_len: %d, gso_size: %d\n",
+		     skb, skb->len, skb_shinfo(skb)->gso_size);
+#endif
+
 	if (skb_gso_ok(skb, features | NETIF_F_GSO_ROBUST)) {
 		/* Packet is from an untrusted source, reset gso_segs. */
 		int type = skb_shinfo(skb)->gso_type;

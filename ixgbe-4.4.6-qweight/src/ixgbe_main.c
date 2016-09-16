@@ -1015,7 +1015,13 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 		budget--;
 
                 if (budget == 0) {
-                    pr_info ("WARNING: entire clean_tx budget consumed!\n");
+                    //pr_info ("WARNING: entire clean_tx budget consumed!\n");
+		    trace_printk ("ixgbe_clean_tx_irq: dev: %s, queue: %d "
+				  "(os txq-%d). WARNING: entire clean_tx "
+				  "budget consumed!\n",
+				  netdev_ring(tx_ring)->name,
+				  tx_ring->queue_index,
+				  tx_ring->netdev_queue_index);
                 }
 	} while (likely(budget));
 
@@ -10002,6 +10008,12 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
         hr_count = (skb_shinfo(skb)->gso_segs); // -1 if the first packet
                                                 // uses the existing header
         pktr_count = skb_shinfo(skb)->gso_segs;
+
+	/* XXX: DEBUG */
+	trace_printk("ixgbe_xmit_frame_ring: dev: %s, queue: %d (os txq-%d), "
+		     "desc_unused: %d, skb_len: %d\n", netdev_ring(tx_ring)->name,
+		     tx_ring->queue_index, tx_ring->netdev_queue_index,
+		     ixgbe_desc_unused(tx_ring), skb->len);
 
 	if (ixgbe_maybe_stop_tx(tx_ring, count)) {
                 pr_info ("ixgbe_xmit_frame_ring: returning NETDEV_TX_BUSY.\n");

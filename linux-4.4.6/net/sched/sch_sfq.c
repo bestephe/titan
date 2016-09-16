@@ -76,7 +76,8 @@
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-#define SFQ_MAX_DEPTH		255 /* max number of packets per flow */
+//#define SFQ_MAX_DEPTH		255 /* max number of packets per flow */
+#define SFQ_MAX_DEPTH		250 /* max number of packets per flow */
 #else
 #define SFQ_MAX_DEPTH		127 /* max number of packets per flow */
 #endif
@@ -415,8 +416,14 @@ sfq_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	slot = &q->slots[x];
 	if (x == SFQ_EMPTY_SLOT) {
 		x = q->dep[0].next; /* get a free slot */
-		if (x >= SFQ_MAX_FLOWS)
+		if (x >= SFQ_MAX_FLOWS) {
+#ifdef CONFIG_DQA
+		/* XXX: DEBUG: I don't want packets being dropped. */
+		printk(KERN_ERR "sfq_enqueue: max flows drop!\n");
+		trace_printk("sfq_enqueue: qdisc: max flows drop!\n");
+#endif
 			return qdisc_drop(skb, sch);
+		}
 		q->ht[hash] = x;
 		slot = &q->slots[x];
 		slot->hash = hash;

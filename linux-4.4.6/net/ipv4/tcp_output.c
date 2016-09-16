@@ -1407,6 +1407,13 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	memset(skb->cb, 0, max(sizeof(struct inet_skb_parm),
 			       sizeof(struct inet6_skb_parm)));
 
+/* XXX: DEBUG */
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+	trace_printk("tcp_transmit_skb: sk: %p, sk_wmem_alloc: %d, skb: %p\n",
+		     sk, atomic_read(&sk->sk_wmem_alloc), skb);
+#endif
+
 	err = icsk->icsk_af_ops->queue_xmit(sk, skb, &inet->cork.fl);
 
 	if (likely(err <= 0))
@@ -2573,7 +2580,8 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 		}
 
 //#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
+//#ifdef CONFIG_DQA
+#if 0
 		/* TCP Xmit Batching :
 		 *
 		 * Due to interrupt coalescing and LRO/GRO, it may be likely
@@ -4058,7 +4066,8 @@ int tcp_write_wakeup(struct sock *sk, int mib)
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
 		/* xmit_more should only be set when sending from tcp_tasklet_func */
-		BUG_ON(skb->xmit_more);
+		//BUG_ON(skb->xmit_more);
+		skb->xmit_more = 0;
 #endif
 
 		err = tcp_transmit_skb(sk, skb, 1, GFP_ATOMIC);

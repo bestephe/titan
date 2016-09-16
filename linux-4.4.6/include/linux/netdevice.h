@@ -3879,6 +3879,31 @@ int __init dev_proc_init(void);
 void netdev_delayed_qdisc(struct Qdisc *q);
 #endif
 
+//#ifdef CONFIG_TCP_XMIT_BATCH
+#ifdef CONFIG_DQA
+static inline netdev_tx_t __netdev_start_xmit(const struct net_device_ops *ops,
+					      struct sk_buff *skb, struct net_device *dev,
+					      bool more)
+{
+	netdev_tx_t ret;
+	skb->xmit_more = more ? 1 : 0;
+	ret = ops->ndo_start_xmit(skb, dev);
+
+	/* XXX: DEBUG */
+	trace_printk("__netdev_start_xmit: dev: %s, skb: %p, more: %d, "
+		     "ret: %d\n", dev->name, skb, more, ret);
+	if (ret == NETDEV_TX_BUSY) {
+		trace_printk("__netdev_start_xmit: dev: %s, skb: %p, more: %d, "
+			     "ret: %d. WARNING! ret == NETDEV_TX_BUSY\n",
+			     dev->name, skb, more, ret);
+		printk(KERN_ERR "__netdev_start_xmit: dev: %s, skb: %p, more: %d, "
+		       "ret: %d. WARNING! ret == NETDEV_TX_BUSY\n",
+		       dev->name, skb, more, ret);
+	}
+
+	return ret;
+}
+#else
 static inline netdev_tx_t __netdev_start_xmit(const struct net_device_ops *ops,
 					      struct sk_buff *skb, struct net_device *dev,
 					      bool more)
@@ -3886,6 +3911,7 @@ static inline netdev_tx_t __netdev_start_xmit(const struct net_device_ops *ops,
 	skb->xmit_more = more ? 1 : 0;
 	return ops->ndo_start_xmit(skb, dev);
 }
+#endif
 
 static inline netdev_tx_t netdev_start_xmit(struct sk_buff *skb, struct net_device *dev,
 					    struct netdev_queue *txq, bool more)

@@ -3507,28 +3507,43 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 		netdev_features_t features;
 		features = netif_skb_features(skb);
 		if (dqa_txq_needs_seg(dev, txq) ||
-		    netif_needs_gso(skb, features) ||
-		    /* XXX: Stale unused code now. */
-		    dev->dqa.qdisc_gso_size > 0) {
+		    netif_needs_gso(skb, features)) {
+		//if (0) {
 
 			u32 orig_gso_size = 0;
+			bool orig_gso_needs_reset = false;
 			bool xmit_more = skb->xmit_more;
 
 			if (skb_is_gso(skb) && dev->dqa.qdisc_gso_size &&
 			    dev->dqa.qdisc_gso_size > skb_shinfo(skb)->gso_size) {
+				trace_printk("__dev_queue_xmit: Changing gso "
+					     "size. orig_gso_size: %d, "
+					     "qdisc_gso_size: %d, txq-%d: "
+					     "sk: %p, overflowq: %d, "
+					     "skb_len: %d\n",
+					     skb_shinfo(skb)->gso_size,
+					     dev->dqa.qdisc_gso_size,
+					     skb->queue_mapping, skb->sk,
+					     txq->dqa_queue.tx_overflowq, skb->len);
 				orig_gso_size = skb_shinfo(skb)->gso_size;
+				orig_gso_needs_reset = true;
 				skb_shinfo(skb)->gso_size = dev->dqa.qdisc_gso_size;
 			}
 
 			/* XXX: DEBUG */
 			//netdev_warn(dev, "__dev_queue_xmit: forcing skb "
 			//	    "segmentation. orig len: %d\n", skb->len);
-			//trace_printk("__dev_queue_xmit: forcing skb "
-			//	     "segmentation. txq-%d: sk: %p, overflowq: %d\n",
-			//	     skb->queue_mapping, skb->sk,
-			//	     txq->dqa_queue.tx_overflowq);
+			trace_printk("__dev_queue_xmit: forcing skb "
+				     "segmentation. txq-%d: sk: %p, "
+				     "overflowq: %d, skb_len: %d\n",
+				     skb->queue_mapping, skb->sk,
+				     txq->dqa_queue.tx_overflowq, skb->len);
 
-			skb->force_seg = 1;
+			if (skb->len > skb_shinfo(skb)->gso_size) {
+				skb->force_seg = 1;
+			}
+
+
 			BUG_ON(skb->next);
 			skb = validate_xmit_skb(skb, dev);
 			if (!skb)
@@ -3542,8 +3557,18 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 				struct sk_buff *next = skb->next;
 				skb->next = NULL;
 
-				if (orig_gso_size) {
+				if (orig_gso_needs_reset) {
+					trace_printk("__dev_queue_xmit: Resetting gso "
+						     "size. orig_gso_size: %d, "
+						     "gso_size: %d, txq-%d: "
+						     "sk: %p, overflowq: %d, "
+						     "skb_len: %d\n",
+						     orig_gso_size,
+						     skb_shinfo(skb)->gso_size,
+						     skb->queue_mapping, skb->sk,
+						     txq->dqa_queue.tx_overflowq, skb->len);
 					skb_shinfo(skb)->gso_size = orig_gso_size;
+					BUG_ON(skb->force_seg);
 				}
 
 				BUG_ON(xmit_more != skb->xmit_more);
