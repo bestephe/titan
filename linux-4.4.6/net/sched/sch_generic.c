@@ -77,9 +77,10 @@ static void try_bulk_dequeue_skb(struct Qdisc *q,
 
 #ifdef CONFIG_DQA
 	trace_printk("try_bulk_dequeue_skb: qdisc: q: %p (txq-%d), qlen: %d, "
-		     "bytes dequeued: %d\n", q, txq->dqa_queue.tx_qi,
-		     qdisc_qlen(q),
-		     qdisc_avail_bulklimit(txq) - bytelimit);
+		     "bytes dequeued: %d, bulklimit: %d\n", q,
+		     txq->dqa_queue.tx_qi, qdisc_qlen(q),
+		     qdisc_avail_bulklimit(txq) - bytelimit,
+		     qdisc_avail_bulklimit(txq));
 #endif
 }
 

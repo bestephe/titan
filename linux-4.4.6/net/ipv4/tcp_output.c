@@ -1187,10 +1187,10 @@ void tcp_wfree(struct sk_buff *skb)
 		 * so that sk_free can be called at the end of the tasklet
 		 * function */
 
-		//trace_printk("tcp_wfree: adding socket to tasklet queue. "
-		//	     "dev: %s, skb: %p, sk: %p, sk_wmem_alloc: %d\n",
-		//	     skb->dev->name, skb, skb->sk,
-		//	     atomic_read(&sk->sk_wmem_alloc));
+		trace_printk("tcp_wfree: adding socket to tasklet queue. "
+			     "dev: %s, skb: %p, sk: %p, sk_wmem_alloc: %d\n",
+			     skb->dev->name, skb, skb->sk,
+			     atomic_read(&sk->sk_wmem_alloc));
 
 		/* queue this socket to tasklet queue */
 		/* XXX: This should be its own function, not copy+pasta */
@@ -1410,8 +1410,8 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 /* XXX: DEBUG */
 //#ifdef CONFIG_TCP_XMIT_BATCH
 #ifdef CONFIG_DQA
-	trace_printk("tcp_transmit_skb: sk: %p, sk_wmem_alloc: %d, skb: %p\n",
-		     sk, atomic_read(&sk->sk_wmem_alloc), skb);
+	//trace_printk("tcp_transmit_skb: sk: %p, sk_wmem_alloc: %d, skb: %p\n",
+	//	     sk, atomic_read(&sk->sk_wmem_alloc), skb);
 #endif
 
 	err = icsk->icsk_af_ops->queue_xmit(sk, skb, &inet->cork.fl);

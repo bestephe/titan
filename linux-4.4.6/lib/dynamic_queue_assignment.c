@@ -44,6 +44,8 @@ static void dqa_update_xps(struct net_device *dev)
 				txq->dqa_queue.tx_overflowq = 1;
 
 				/* XXX: DEBUG */
+				netdev_warn(dev, "dqa_update: Marked txq-%d as "
+					    "an XPS overflowq\n", queue_index);
 				trace_printk("dqa_update: Marked txq-%d as "
 					     "an XPS overflowq\n",
 					     queue_index);
@@ -90,6 +92,8 @@ void dqa_update(struct net_device *dev)
 	txq->dqa_queue.tx_overflowq = 1;
 
 	/* XXX: DEBUG */
+	netdev_warn(dev, "dqa_update: Marked txq-%d as overflowq\n",
+		    (dev->real_num_tx_queues - 1));
 	trace_printk("dqa_update: Marked txq-%d as overflowq\n",
 		     (dev->real_num_tx_queues - 1));
 
@@ -249,6 +253,9 @@ int dqa_get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 	} else if (dev->dqa.dqa_alg == DQA_ALG_OVERFLOWQ) {
 		queue_index = dqa_get_xps_queue_overflowq(dev, skb);
 	}
+
+	trace_printk("dqa_get_xps_queue: dev: %s, queue_index: %d\n",
+		     dev->name, queue_index);
 
 	return queue_index;
 }

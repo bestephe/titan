@@ -838,6 +838,14 @@ static int ixgbe_acquire_msix_vectors(struct ixgbe_adapter *adapter)
 	 */
 	vectors = min_t(int, vectors, num_online_cpus());
 
+	/* Because this version of ixgbe always uses VMDq, if we're using
+	 * pools, then we only get as many usable rx queues as interrupts.
+	 * We'll use that to limit the number of interrupts we're using.  */
+	if (adapter->num_rx_queues_per_pool > 1) {
+		vectors = min_t(int, vectors, adapter->num_rx_queues_per_pool);
+		pr_err(" limiting vectors to rx_queues_per_pool: %d", vectors);
+	}
+
 	/* Some vectors are necessary for non-queue interrupts */
 	vectors += NON_Q_VECTORS;
 

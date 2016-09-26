@@ -785,9 +785,11 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 	tx_desc = IXGBE_TX_DESC(tx_ring, i);
 	i -= tx_ring->count;
 
-	//trace_printk("ixgbe_clean_tx_irq: dev: %s, queue: %d "
-	//	     "(os queue: %d)\n", netdev_ring(tx_ring)->name,
-	//	     tx_ring->queue_index, tx_ring->netdev_queue_index);
+	trace_printk("ixgbe_clean_tx_irq: dev: %s, queue: %d "
+		     "(os queue: %d), ntu: %d, ntc: %d budget: %d\n",
+		     netdev_ring(tx_ring)->name, tx_ring->queue_index,
+		     tx_ring->netdev_queue_index, tx_ring->next_to_use,
+		     tx_ring->next_to_clean, budget);
 	//if (tx_buffer->next_to_watch) {
 	//	trace_printk("ixgbe_clean_tx_irq: work pending! dev: %s, "
 	//		     "queue: %d (os queue: %d)\n",
@@ -1037,7 +1039,8 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
         //pr_info ("ring_%d: ntc: %d. ntu: %d\n", tx_ring->queue_index,
         //         tx_ring->next_to_clean, tx_ring->next_to_use);
 
-	if (check_for_tx_hang(tx_ring) && ixgbe_check_tx_hang(tx_ring)) {
+	//if (check_for_tx_hang(tx_ring) && ixgbe_check_tx_hang(tx_ring)) {
+	if (0) {
 		/* schedule immediate reset if we believe we hung */
 		struct ixgbe_hw *hw = &adapter->hw;
 		e_err(drv, "Detected Tx Unit Hang\n"
@@ -1054,10 +1057,28 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 			"  jiffies              <%lx>\n",
 			tx_ring->tx_buffer_info[i].time_stamp, jiffies);
 
+		trace_printk("Detected Tx Unit Hang: "
+			"  Tx Queue             <%d> <fake %d>"
+			"  TDH, TDT             <%x>, <%x>"
+			"  next_to_use          <%x>"
+			"  next_to_clean        <%x>",
+			tx_ring->queue_index, tx_ring->netdev_queue_index,
+			IXGBE_READ_REG(hw, IXGBE_TDH(tx_ring->reg_idx)),
+			IXGBE_READ_REG(hw, IXGBE_TDT(tx_ring->reg_idx)),
+			tx_ring->next_to_use, i);
+		trace_printk("tx_buffer_info[next_to_clean]\n"
+			"  time_stamp           <%lx>\n"
+			"  jiffies              <%lx>\n",
+			tx_ring->tx_buffer_info[i].time_stamp, jiffies);
+
 		netif_stop_subqueue(netdev_ring(tx_ring),
 				    ring_queue_index(tx_ring));
 
 		e_info(probe,
+		       "tx hang %d detected on queue %d, resetting adapter\n",
+		       adapter->tx_timeout_count + 1, tx_ring->queue_index);
+
+		trace_printk(
 		       "tx hang %d detected on queue %d, resetting adapter\n",
 		       adapter->tx_timeout_count + 1, tx_ring->queue_index);
 
@@ -6792,8 +6813,8 @@ static int ixgbe_open(struct net_device *netdev)
 
 	/* Only the first queues provide RSS? Is there any way around this by
 	 * configuring each pool into promiscuous mode? */
-	err = netif_set_real_num_rx_queues(netdev, adapter->num_rx_queues);
-	//err = netif_set_real_num_rx_queues(netdev, adapter->num_rx_queues_per_pool);
+	//err = netif_set_real_num_rx_queues(netdev, adapter->num_rx_queues);
+	err = netif_set_real_num_rx_queues(netdev, adapter->num_rx_queues_per_pool);
 	if (err)
 		goto err_set_queues;
 
@@ -10011,9 +10032,12 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
 
 	/* XXX: DEBUG */
 	trace_printk("ixgbe_xmit_frame_ring: dev: %s, queue: %d (os txq-%d), "
-		     "desc_unused: %d, skb_len: %d\n", netdev_ring(tx_ring)->name,
+		     "desc_unused: %d, skb_len: %d, xmit_more: %d, "
+		     "ntu: %d (%x), ntc: %d (%x)\n", netdev_ring(tx_ring)->name,
 		     tx_ring->queue_index, tx_ring->netdev_queue_index,
-		     ixgbe_desc_unused(tx_ring), skb->len);
+		     ixgbe_desc_unused(tx_ring), skb->len, skb->xmit_more,
+		     tx_ring->next_to_use, tx_ring->next_to_use,
+		     tx_ring->next_to_clean, tx_ring->next_to_clean);
 
 	if (ixgbe_maybe_stop_tx(tx_ring, count)) {
                 pr_info ("ixgbe_xmit_frame_ring: returning NETDEV_TX_BUSY.\n");
