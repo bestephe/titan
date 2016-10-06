@@ -2985,9 +2985,9 @@ static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 /* Note: skipping bypassing the queue hurts throughput.  A better solution than
  * the code here would be to configure qdisc on the appropriate queues (the
  * overflow queue) to not allow bypass. */
-//#if 0
+#if 0
 //#ifdef CONFIG_TCP_XMIT_BATCH
-#ifdef CONFIG_DQA
+//ifdef CONFIG_DQA
 	/* Don't bypass qdisc if we are xmitting multiple skb's in a batch. */
 	/* Now that skb->xmit_more is set always when sent from the tasklet, I
 	 * don't think checking for xmit_more is appropriate.  Instead, lets
@@ -3568,7 +3568,12 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 						     skb->queue_mapping, skb->sk,
 						     txq->dqa_queue.tx_overflowq, skb->len);
 					skb_shinfo(skb)->gso_size = orig_gso_size;
-					BUG_ON(skb->force_seg);
+
+					/* XXX: I don't know why force_seg can
+					 * be true, but it shouldn't be here.
+					 * */
+					//BUG_ON(skb->force_seg);
+					skb->force_seg = false;
 				}
 
 				BUG_ON(xmit_more != skb->xmit_more);
