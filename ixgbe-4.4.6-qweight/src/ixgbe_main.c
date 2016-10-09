@@ -2793,15 +2793,15 @@ static int ixgbe_request_msix_irqs(struct ixgbe_adapter *adapter)
 			ti++;
 
                         /* XXX: DEBUG */
-                        struct ixgbe_ring *ring;
-                        pr_err (" q_vector: %s\n", q_vector->name);
-                        ixgbe_for_each_ring(ring, q_vector->rx) {
-                            pr_err("  rxq-%d\n", ring->queue_index);
-                        }
-                        ixgbe_for_each_ring(ring, q_vector->tx) {
-                            pr_err("  txq-%d (netdev txq-%d)\n",
-				   ring->queue_index, ring->netdev_queue_index);
-                        }
+                        //struct ixgbe_ring *ring;
+                        //pr_err (" q_vector: %s\n", q_vector->name);
+                        //ixgbe_for_each_ring(ring, q_vector->rx) {
+                        //    pr_err("  rxq-%d\n", ring->queue_index);
+                        //}
+                        //ixgbe_for_each_ring(ring, q_vector->tx) {
+                        //    pr_err("  txq-%d (netdev txq-%d)\n",
+			//	   ring->queue_index, ring->netdev_queue_index);
+                        //}
 		} else if (q_vector->rx.ring) {
 			snprintf(q_vector->name, sizeof(q_vector->name) - 1,
 				 "%s-%s-%d", netdev->name, "rx", ri++);
@@ -6556,8 +6556,8 @@ err_setup_tx:
 int ixgbe_setup_rx_resources(struct ixgbe_ring *rx_ring)
 {
 	/* DEBUG */
-	pr_info("ixgbe_setup_rx_resources: rx_ring: %p\n", rx_ring);
-	pr_info(" rx_ring->q_vector: %p\n", rx_ring->q_vector);
+	//pr_info("ixgbe_setup_rx_resources: rx_ring: %p\n", rx_ring);
+	//pr_info(" rx_ring->q_vector: %p\n", rx_ring->q_vector);
 
 	struct device *dev = rx_ring->dev;
 	int orig_node = dev_to_node(dev);

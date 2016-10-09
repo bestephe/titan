@@ -44,8 +44,8 @@ static void dqa_update_xps(struct net_device *dev)
 				txq->dqa_queue.tx_overflowq = 1;
 
 				/* XXX: DEBUG */
-				netdev_warn(dev, "dqa_update: Marked txq-%d as "
-					    "an XPS overflowq\n", queue_index);
+				//netdev_warn(dev, "dqa_update: Marked txq-%d as "
+				//	    "an XPS overflowq\n", queue_index);
 				trace_printk("dqa_update: Marked txq-%d as "
 					     "an XPS overflowq\n",
 					     queue_index);
@@ -82,9 +82,9 @@ void dqa_update(struct net_device *dev)
 		trace_printk("dqa_update: WARNING! txq-%d is the non-XPS "
 			     "overflowq but not an XPS overflowq!\n",
 			     (dev->real_num_tx_queues - 1));
-		netdev_warn(dev, "dqa_update: WARNING! txq-%d is the "
-			    "non-XPS overflowq but not an XPS overflowq!\n",
-			    (dev->real_num_tx_queues - 1));
+		//netdev_warn(dev, "dqa_update: WARNING! txq-%d is the "
+		//	    "non-XPS overflowq but not an XPS overflowq!\n",
+		//	    (dev->real_num_tx_queues - 1));
 	}
 
 	/* Mark the last queue as an overflowq. */
@@ -92,8 +92,8 @@ void dqa_update(struct net_device *dev)
 	txq->dqa_queue.tx_overflowq = 1;
 
 	/* XXX: DEBUG */
-	netdev_warn(dev, "dqa_update: Marked txq-%d as overflowq\n",
-		    (dev->real_num_tx_queues - 1));
+	//netdev_warn(dev, "dqa_update: Marked txq-%d as overflowq\n",
+	//	    (dev->real_num_tx_queues - 1));
 	trace_printk("dqa_update: Marked txq-%d as overflowq\n",
 		     (dev->real_num_tx_queues - 1));
 

@@ -1102,14 +1102,14 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 	}
 
         /* XXX: DEBUG */
-        pr_err ("ixgbe_alloc_q_vector %d:\n", v_idx);
-        ixgbe_for_each_ring(ring, q_vector->rx) {
-            pr_err(" rxq-%d\n", ring->queue_index);
-        }
-        ixgbe_for_each_ring(ring, q_vector->tx) {
-            pr_err(" txq-%d (netdev txq-%d)\n", ring->queue_index,
-		   ring->netdev_queue_index);
-        }
+        //pr_err ("ixgbe_alloc_q_vector %d:\n", v_idx);
+        //ixgbe_for_each_ring(ring, q_vector->rx) {
+        //    pr_err(" rxq-%d\n", ring->queue_index);
+        //}
+        //ixgbe_for_each_ring(ring, q_vector->tx) {
+        //    pr_err(" txq-%d (netdev txq-%d)\n", ring->queue_index,
+	//	   ring->netdev_queue_index);
+        //}
 
 	return 0;
 }
