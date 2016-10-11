@@ -329,7 +329,11 @@ enum ixgbe_ring_state_t {
 #define clear_ring_rsc_enabled(ring) \
 	clear_bit(__IXGBE_RX_RSC_ENABLED, &(ring)->state)
 #define netdev_ring(ring) (ring->netdev)
-#define ring_queue_index(ring) (ring->queue_index)
+
+/* XXX: This is only used for communicating to the OS, so it should return the
+ * fake index. */
+//#define ring_queue_index(ring) (ring->queue_index)
+#define ring_queue_index(ring) (ring->netdev_queue_index)
 
 
 struct ixgbe_ring {
@@ -1130,14 +1134,10 @@ void ixgbe_dbg_exit(void);
 #if IS_ENABLED(CONFIG_BQL) || defined(HAVE_SKB_XMIT_MORE)
 static inline struct netdev_queue *txring_txq(const struct ixgbe_ring *ring)
 {
-	return netdev_get_tx_queue(ring->netdev, ring->queue_index);
-	//TODO: Turn this on!
-#if 0
 	/* XXX: We are lying to the OS about the number of tx queues. */
 	//return netdev_get_tx_queue(ring->netdev, ring->queue_index);
 
 	return netdev_get_tx_queue(ring->netdev, ring->netdev_queue_index);
-#endif
 }
 #endif
 

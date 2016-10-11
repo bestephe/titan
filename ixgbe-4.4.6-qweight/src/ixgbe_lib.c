@@ -553,6 +553,10 @@ static bool ixgbe_set_vmdq_queues(struct ixgbe_adapter *adapter)
 	u16 fcoe_i = 0;
 #endif
 
+        /* XXX: This function may need to change. */
+	printk(KERN_ERR "ixgbe_set_vmdq_queues: enabled: %d\n",
+	       (adapter->flags & IXGBE_FLAG_VMDQ_ENABLED));
+
 	/* only proceed if VMDq is enabled */
 	if (!(adapter->flags & IXGBE_FLAG_VMDQ_ENABLED))
 		return false;
@@ -623,8 +627,19 @@ static bool ixgbe_set_vmdq_queues(struct ixgbe_adapter *adapter)
 	adapter->num_rx_queues = vmdq_i * rss_i;
 #ifdef HAVE_TX_MQ
 	adapter->num_tx_queues = vmdq_i * rss_i;
+	adapter->num_tx_pools = vmdq_i;
+	adapter->num_tx_queues_per_pool = rss_i;
+	if (rss_m == IXGBE_RSS_2Q_MASK) {
+		adapter->tx_queue_shift = 1;
+	} else if (rss_m == IXGBE_RSS_4Q_MASK) {
+		adapter->tx_queue_shift = 2;
+	} else {
+		pr_err("Unknown rss mask? Driver may misbehave\n");
+	}
 #else
 	adapter->num_tx_queues = vmdq_i;
+	adapter->num_tx_pools = vmdq_i;
+	adapter->num_tx_queues_per_pool = 1;
 #endif /* HAVE_TX_MQ */
 
 	/* disable ATR as it is not supported when VMDq is enabled */
@@ -683,6 +698,8 @@ static bool ixgbe_set_rss_queues(struct ixgbe_adapter *adapter)
 {
 	struct ixgbe_ring_feature *f;
 	u16 rss_i;
+
+	printk(KERN_ERR "WARNING! Using RSS queues, not VMDq queues!\n");
 
 	/* set mask for 16 queue limit of RSS */
 	f = &adapter->ring_feature[RING_F_RSS];
@@ -761,9 +778,13 @@ static void ixgbe_set_num_queues(struct ixgbe_adapter *adapter)
 {
 	/* Start with base case */
 	adapter->num_rx_queues = 1;
-	adapter->num_tx_queues = 1;
 	adapter->num_rx_pools = adapter->num_rx_queues;
 	adapter->num_rx_queues_per_pool = 1;
+	adapter->num_tx_queues = 1;
+	adapter->num_tx_pools = adapter->num_tx_queues;
+	adapter->num_tx_queues_per_pool = 1;
+	adapter->tx_queue_shift = 0;
+
 
 #ifdef HAVE_TX_MQ
 	if (ixgbe_set_dcb_vmdq_queues(adapter))
@@ -795,6 +816,11 @@ static int ixgbe_acquire_msix_vectors(struct ixgbe_adapter *adapter)
 	if (!(adapter->flags & IXGBE_FLAG_MSIX_CAPABLE))
 		return -EOPNOTSUPP;
 
+        pr_err("ixgbe_acquire_msix_vectors:\n");
+        pr_err(" adapter->num_rx_queues: %d\n", adapter->num_rx_queues);
+        pr_err(" adapter->num_tx_queues: %d\n", adapter->num_tx_queues);
+        pr_err(" hw->mac.max_msix_vectors: %d\n", hw->mac.max_msix_vectors);
+
 	/* We start by asking for one vector per queue pair */
 	vectors = max(adapter->num_rx_queues, adapter->num_tx_queues);
 
@@ -804,6 +830,14 @@ static int ixgbe_acquire_msix_vectors(struct ixgbe_adapter *adapter)
 	 * of vectors as there are CPUs.
 	 */
 	vectors = min_t(int, vectors, num_online_cpus());
+
+	/* Because this version of ixgbe always uses VMDq, if we're using
+	 * pools, then we only get as many usable rx queues as interrupts.
+	 * We'll use that to limit the number of interrupts we're using.  */
+	if (adapter->num_rx_queues_per_pool > 1) {
+		vectors = min_t(int, vectors, adapter->num_rx_queues_per_pool);
+		pr_err(" limiting vectors to rx_queues_per_pool: %d", vectors);
+	}
 
 	/* Some vectors are necessary for non-queue interrupts */
 	vectors += NON_Q_VECTORS;
@@ -850,6 +884,7 @@ static int ixgbe_acquire_msix_vectors(struct ixgbe_adapter *adapter)
 	 * requested range.
 	 */
 	adapter->flags |= IXGBE_FLAG_MSIX_ENABLED;
+
 
 	/* Adjust for only the vectors we'll use, which is minimum
 	 * of max_q_vectors, or the number of vectors we were allocated.
@@ -985,6 +1020,7 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 		/* apply Tx specific ring traits */
 		ring->count = adapter->tx_ring_count;
 		ring->queue_index = txr_idx;
+		ring->netdev_queue_index = txr_idx >> adapter->tx_queue_shift;
 
 		/* assign ring to adapter */
 		adapter->tx_ring[txr_idx] = ring;
@@ -1030,6 +1066,7 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 		/* apply Rx specific ring traits */
 		ring->count = adapter->rx_ring_count;
 		ring->queue_index = rxr_idx;
+		ring->netdev_queue_index = rxr_idx;
 
 		/* assign ring to adapter */
 		adapter->rx_ring[rxr_idx] = ring;
@@ -1087,6 +1124,8 @@ static int ixgbe_alloc_q_vectors(struct ixgbe_adapter *adapter)
 	unsigned int txr_remaining = adapter->num_tx_queues;
 	unsigned int rxr_idx = 0, txr_idx = 0, v_idx = 0;
 	int err;
+
+	pr_info("ixgbe_alloc_q_vectors:\n");
 
 	if (q_vectors >= (rxr_remaining + txr_remaining)) {
 		for (; rxr_remaining; v_idx++) {

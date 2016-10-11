@@ -776,7 +776,7 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 			.name = "Virtual Machine Device Queues (VMDQ)",
 			.err  = "defaulting to Disabled",
  			.def  = OPTION_DISABLED,
-			//.def  = 16,
+			.def  = 16,
 			.arg  = { .r = { .min = OPTION_DISABLED,
 					 .max = IXGBE_MAX_VMDQ_INDICES
 				} }
@@ -800,20 +800,19 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 
 			/* zero or one both mean disabled from our driver's
 			 * perspective */
-			if (vmdq > 1) {
-				*aflags |= IXGBE_FLAG_VMDQ_ENABLED;
-			} else {
-				*aflags &= ~IXGBE_FLAG_VMDQ_ENABLED;
-			}
-
-			//TODO: Enable!
-			/* In the qweight version, 1 still means VMDq so we can
-			 * get queue weights? */
-			//if (vmdq > 0) {
+			//if (vmdq > 1) {
 			//	*aflags |= IXGBE_FLAG_VMDQ_ENABLED;
 			//} else {
 			//	*aflags &= ~IXGBE_FLAG_VMDQ_ENABLED;
 			//}
+
+			/* In the qweight version, 1 still means VMDq so we can
+			 * get queue weights? */
+			if (vmdq > 0) {
+				*aflags |= IXGBE_FLAG_VMDQ_ENABLED;
+			} else {
+				*aflags &= ~IXGBE_FLAG_VMDQ_ENABLED;
+			}
 
 			feature[RING_F_VMDQ].limit = vmdq;
 #ifdef module_param_array
@@ -846,10 +845,7 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 			pr_warn("The QWeight version of ixgbe "
 				"requires that VMDq is enabled. Enabling VMDq.\n");
 
-			//TODO: Enable!
-			//*aflags |= IXGBE_FLAG_VMDQ_ENABLED;
-			pr_err("Ignoring enabling VMDQ!\n");
-
+			*aflags |= IXGBE_FLAG_VMDQ_ENABLED;
 			feature[RING_F_VMDQ].limit = opt.def;
                 }
 	}

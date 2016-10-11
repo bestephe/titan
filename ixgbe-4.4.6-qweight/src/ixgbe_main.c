@@ -67,7 +67,7 @@
 
 #define RELEASE_TAG
 
-#define DRV_VERSION	"4.4.6" \
+#define DRV_VERSION	"4.4.6-qweight" \
 			DRIVERIOV DRV_HW_PERF FPGA \
 			BYPASS_TAG RELEASE_TAG
 #define DRV_SUMMARY	"Intel(R) 10GbE PCI Express Linux Network Driver"
@@ -801,6 +801,17 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 
 		/* update budget accounting */
 		budget--;
+
+		/* XXX: DEBUG */
+                if (budget == 0) {
+			//pr_info ("WARNING: entire clean_tx budget consumed!\n");
+			//trace_printk ("ixgbe_clean_tx_irq: dev: %s, queue: %d "
+			//	      "(os txq-%d). WARNING: entire clean_tx "
+			//	      "budget consumed!\n",
+			//	      netdev_ring(tx_ring)->name,
+			//	      tx_ring->queue_index,
+			//	      tx_ring->netdev_queue_index);
+                }
 	} while (likely(budget));
 
 	i += tx_ring->count;
@@ -812,15 +823,20 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 	q_vector->tx.total_bytes += total_bytes;
 	q_vector->tx.total_packets += total_packets;
 
-	if (check_for_tx_hang(tx_ring) && ixgbe_check_tx_hang(tx_ring)) {
+	/* I was getting false hangs (and maybe real hangs?)  This solved the
+	 * problem.  However, this was in the old slow version of
+	 * ixgbe-4.4.6-qweight.  I should go back and see if this can be
+	 * renabled. */
+	//if (check_for_tx_hang(tx_ring) && ixgbe_check_tx_hang(tx_ring)) {
+	if (0) {
 		/* schedule immediate reset if we believe we hung */
 		struct ixgbe_hw *hw = &adapter->hw;
 		e_err(drv, "Detected Tx Unit Hang\n"
-			"  Tx Queue             <%d>\n"
+			"  Tx Queue             <%d> <fake %d>\n"
 			"  TDH, TDT             <%x>, <%x>\n"
 			"  next_to_use          <%x>\n"
 			"  next_to_clean        <%x>\n",
-			tx_ring->queue_index,
+			tx_ring->queue_index, tx_ring->netdev_queue_index,
 			IXGBE_READ_REG(hw, IXGBE_TDH(tx_ring->reg_idx)),
 			IXGBE_READ_REG(hw, IXGBE_TDT(tx_ring->reg_idx)),
 			tx_ring->next_to_use, i);
@@ -2521,6 +2537,10 @@ static int ixgbe_request_msix_irqs(struct ixgbe_adapter *adapter)
 	struct net_device *netdev = adapter->netdev;
 	int vector, err;
 	int ri = 0, ti = 0;
+ 
+        pr_err ("ixgbe_request_msix_irqs:\n");
+        pr_err (" adapter->num_q_vectors: %d\n",
+                adapter->num_q_vectors);
 
 	for (vector = 0; vector < adapter->num_q_vectors; vector++) {
 		struct ixgbe_q_vector *q_vector = adapter->q_vector[vector];
@@ -2861,6 +2881,68 @@ void ixgbe_configure_tx_ring(struct ixgbe_adapter *adapter,
 	if (!wait_loop)
 		e_err(drv, "Could not enable Tx Queue %d\n", reg_idx);
 }
+ 
+#define IXGBE_CRQ_MASK  (0x3FFF)
+static int ixgbe_get_txq_credits(struct ixgbe_hw *hw, int txq_i)
+{
+        u32 reg;
+        u32 crq;
+
+        IXGBE_WRITE_REG(hw, IXGBE_RTTDQSEL, txq_i);
+        reg = IXGBE_READ_REG(hw, IXGBE_RTTDT1C);
+        crq = reg & IXGBE_CRQ_MASK;
+
+	/* XXX: DEBUG */
+        pr_err ("txq-%d: credit refill quantum (CRQ): %u\n",
+                txq_i, crq);
+        pr_err (" DT1S: %u\n", IXGBE_READ_REG(hw, IXGBE_RTTDT1S));
+
+        return crq;
+}
+
+static void ixgbe_set_txq_credits(struct ixgbe_hw *hw, int txq_i, u16 refill)
+{
+        IXGBE_WRITE_REG(hw, IXGBE_RTTDQSEL, txq_i);
+	IXGBE_WRITE_REG(hw, IXGBE_RTTDT1C, refill);
+
+	/* XXX: DEBUG */
+	//ixgbe_get_txq_credits(hw, txq_i);
+}
+
+static void ixgbe_setup_mtqc_wrr(struct ixgbe_adapter *adapter)
+{
+	int i;
+	u16 min_credit;
+
+	/* BS: I need to put more thought into converting from weights to
+	 * refill credits. */
+	min_credit = IXGBE_MIN_WRR_CREDIT(adapter->netdev);
+
+	for (i = 0; i < adapter->num_tx_queues; i++) {
+		ixgbe_set_txq_credits(&adapter->hw, i,
+		    min_credit);
+	}
+
+        /* XXX: DEBUG */
+#if 0
+        pr_err ("ixgbe_setup_mtqc_wrr:\n");
+
+	/* TODO: test with weights later. */
+	for (i = 0; i < adapter->num_tx_queues; i++) {
+		//ixgbe_set_txq_credits(&adapter->hw, i,
+		//    IXGBE_DCB_MAX_CREDIT_REFILL);
+		//if (i == 0 || i == 1 || i == 2 || i == 3) {
+		if (i == 0) {
+			ixgbe_set_txq_credits(&adapter->hw, i,
+			    IXGBE_DCB_MAX_CREDIT_REFILL * 4);
+		} else {
+			ixgbe_set_txq_credits(&adapter->hw, i, min_credit);
+			//ixgbe_set_txq_credits(&adapter->hw, i, 5);
+		}
+	}
+#endif
+}
+
 
 static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
 {
@@ -2895,6 +2977,19 @@ static void ixgbe_setup_mtqc(struct ixgbe_adapter *adapter)
 		else
 			mtqc = IXGBE_MTQC_64Q_1PB;
 	}
+
+        /* (Try to) enable WRR */
+        /* The output of VMDq=8,8 is:
+         * [ 1348.251714] ixgbe_setup_mtqc:
+         * [ 1348.255021]  RTTDCS: 0xc00042
+         * [ 1348.258329]  vmpac: 2
+         * [ 1348.260862]  tcs: 0
+         * [ 1348.263198]  mtqc: a
+         */
+        if (adapter->wrr) {
+            rttdcs |= (IXGBE_RTTDCS_VMPAC);
+            ixgbe_setup_mtqc_wrr(adapter);
+        }
 
 	IXGBE_WRITE_REG(hw, IXGBE_MTQC, mtqc);
 
@@ -3431,6 +3526,10 @@ static void ixgbe_setup_psrtype(struct ixgbe_adapter *adapter)
 		psrtype |= 2 << 29;
 	else if (rss_i > 1)
 		psrtype |= 1 << 29;
+ 
+        pr_err ("ixgbe_setup_psrtype: adapter->num_rx_pools: %d\n",
+                adapter->num_rx_pools);
+
 
 	for (p = 0; p < adapter->num_rx_pools; p++)
 		IXGBE_WRITE_REG(hw, IXGBE_PSRTYPE(VMDQ_P(p)), psrtype);
@@ -4558,9 +4657,12 @@ void ixgbe_set_rx_mode(struct net_device *netdev)
 		 * if SR-IOV and VMDQ are disabled - otherwise ensure
 		 * that hardware VLAN filters remain enabled.
 		 */
-		if ((adapter->flags & (IXGBE_FLAG_VMDQ_ENABLED |
-				       IXGBE_FLAG_SRIOV_ENABLED)))
-			vlnctrl |= (IXGBE_VLNCTRL_VFE | IXGBE_VLNCTRL_CFIEN);
+		pr_err ("ixgbe_set_rx_mode: disabling hardware VLAN filters "
+		        "even if VMDQ is enabled!\n");
+		//if ((adapter->flags & (IXGBE_FLAG_VMDQ_ENABLED |
+		//		       IXGBE_FLAG_SRIOV_ENABLED)))
+		//	vlnctrl |= (IXGBE_VLNCTRL_VFE | IXGBE_VLNCTRL_CFIEN);
+			
 #else
 		ixgbe_vlan_promisc_enable(adapter);
 #endif
@@ -4741,6 +4843,10 @@ static void ixgbe_configure_dcb(struct ixgbe_adapter *adapter)
 		return;
 	}
 
+        pr_err ("Configuring DCB... I don't want this to be happening.\n");
+        pr_err (" This will configure traffic classes and set queue weights!\n");
+
+
 	if (hw->mac.type == ixgbe_mac_82598EB) {
 #ifdef NETDEV_CAN_SET_GSO_MAX_SIZE
 		netif_set_gso_max_size(netdev, 32768);
@@ -4797,6 +4903,12 @@ static void ixgbe_configure_dcb(struct ixgbe_adapter *adapter)
 		/* write msb to all 8 TCs in one write */
 		IXGBE_WRITE_REG(hw, IXGBE_RQTC, msb * 0x11111111);
 	}
+
+        /* XXX: DEBUG */
+        int i;
+        for (i = 0; i < adapter->num_tx_queues; i++) {
+                ixgbe_get_txq_credits(hw, i);
+        }
 }
 
 #ifndef IXGBE_NO_LLI
@@ -6014,6 +6126,11 @@ static int ixgbe_setup_all_tx_resources(struct ixgbe_adapter *adapter)
 	for (i = 0; i < adapter->num_tx_queues; i++) {
 
 		err = ixgbe_setup_tx_resources(adapter->tx_ring[i]);
+
+                /* Debug the per-Tx queue (pool?) credits. */
+                //e_err(probe, "Setting up Tx Queue %u...\n", i);
+                //ixgbe_get_txq_credits(&adapter->hw, i);
+
 		if (!err)
 			continue;
 
@@ -6266,18 +6383,30 @@ static int ixgbe_open(struct net_device *netdev)
 	if (err)
 		goto err_req_irq;
 
-	/* Notify the stack of the actual queue counts. */
-	err = netif_set_real_num_tx_queues(netdev,
-					   adapter->num_rx_pools > 1 ? 1 :
-					   adapter->num_tx_queues);
+	/* Notify the stack of only the rx queues that support RSS and the
+	 * first tx queues per pool because TX weights may only be assigned per
+	 * pool. */
+	//err = netif_set_real_num_tx_queues(netdev, adapter->num_tx_queues);
+	err = netif_set_real_num_tx_queues(netdev, adapter->num_tx_pools);
 	if (err)
 		goto err_set_queues;
 
-	err = netif_set_real_num_rx_queues(netdev,
-					   adapter->num_rx_pools > 1 ? 1 :
-					   adapter->num_rx_queues);
+	/* Only the first queues provide RSS? Is there any way around this by
+	 * configuring each pool into promiscuous mode? */
+	//err = netif_set_real_num_rx_queues(netdev, adapter->num_rx_queues);
+	err = netif_set_real_num_rx_queues(netdev, adapter->num_rx_queues_per_pool);
 	if (err)
 		goto err_set_queues;
+
+	pr_err("ixgbe_open:\n");
+	pr_err(" num_rx_pools: %d\n", adapter->num_rx_pools);
+	pr_err(" num_rx_queues_per_pool: %d\n", adapter->num_rx_queues_per_pool);
+	pr_err(" num_rx_queues: %d\n", adapter->num_rx_queues);
+	pr_err(" num_tx_pools: %d\n", adapter->num_tx_pools);
+	pr_err(" num_rx_queues_per_pool: %d\n", adapter->num_rx_queues_per_pool);
+	pr_err(" num_tx_queues: %d\n", adapter->num_tx_queues);
+	pr_err(" num_vfs: %d\n", adapter->num_vfs);
+	pr_err(" num_q_vectors: %d\n", adapter->num_q_vectors);
 
 #ifdef HAVE_PTP_1588_CLOCK
 	ixgbe_ptp_init(adapter);
@@ -7956,7 +8085,9 @@ static void ixgbe_tx_olinfo_status(union ixgbe_adv_tx_desc *tx_desc,
 
 static int __ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size)
 {
-	netif_stop_subqueue(tx_ring->netdev, tx_ring->queue_index);
+	/* XXX: lying about queues. */
+	//netif_stop_subqueue(tx_ring->netdev, tx_ring->queue_index);
+	netif_stop_subqueue(tx_ring->netdev, tx_ring->netdev_queue_index);
 
 	/* Herbert's original patch had:
 	 *  smp_mb__after_netif_stop_queue();
@@ -7971,13 +8102,22 @@ static int __ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size)
 		return -EBUSY;
 
 	/* A reprieve! - use start_queue because it doesn't call schedule */
-	netif_start_subqueue(tx_ring->netdev, tx_ring->queue_index);
+	/* XXX: lying about queues. */
+	//netif_start_subqueue(tx_ring->netdev, tx_ring->queue_index);
+	netif_start_subqueue(tx_ring->netdev, tx_ring->netdev_queue_index);
 	++tx_ring->tx_stats.restart_queue;
 	return 0;
 }
 
 static inline int ixgbe_maybe_stop_tx(struct ixgbe_ring *tx_ring, u16 size)
 {
+	/* XXX: regarding lying about tx queue indexes:
+	 *  This function will stop the tx softirqs for all of the queues in a
+	 *  pool if the descriptors in a single queue are fully occupied.  If
+	 *  this driver used a more sophisticated pool->queue mapping in
+	 *  ixgbe_xmit_frame(...) then it might be possible to avoid stopping a
+	 *  pool until all of the queues in the pool are full. */
+
 	if (likely(ixgbe_desc_unused(tx_ring) >= size))
 		return 0;
 
@@ -8108,6 +8248,7 @@ static void ixgbe_tx_map(struct ixgbe_ring *tx_ring,
 	ixgbe_maybe_stop_tx(tx_ring, DESC_NEEDED);
 
 	if (netif_xmit_stopped(txring_txq(tx_ring)) || !skb->xmit_more) {
+		tx_ring->needs_tail_update = 0;
 		writel(i, tx_ring->tail);
 
 		/* we need this if more than one processor can write to our tail
@@ -8115,9 +8256,15 @@ static void ixgbe_tx_map(struct ixgbe_ring *tx_ring,
 		 */
 		mmiowb();
 	}
+	else {
+		tx_ring->needs_tail_update = 1;
+		//pr_info("ixgbe_tx_map: skipping update to txq-%d <%d>\n",
+		//	tx_ring->queue_index, tx_ring->netdev_queue_index);
+	}
 #else
 
 	/* notify HW of packet */
+	tx_ring->needs_tail_update = 0;
 	writel(i, tx_ring->tail);
 
 	/* we need this if more than one processor can write to our tail
@@ -8560,7 +8707,12 @@ static netdev_tx_t ixgbe_xmit_frame(struct sk_buff *skb,
 	struct ixgbe_ring *tx_ring;
 #ifdef HAVE_TX_MQ
 	unsigned int r_idx = skb->queue_mapping;
+	unsigned int pool_idx = 0;
 #endif
+	netdev_tx_t ret;
+	unsigned int pool_start;
+	int i;
+	u8 xmit_more;
 
 	if (!netif_carrier_ok(netdev)) {
 		dev_kfree_skb_any(skb);
@@ -8575,13 +8727,74 @@ static netdev_tx_t ixgbe_xmit_frame(struct sk_buff *skb,
 		return NETDEV_TX_OK;
 
 #ifdef HAVE_TX_MQ
-	if (r_idx >= adapter->num_tx_queues)
+	/* For q weights, we lie about the queues to the OS because weights may
+	 * only be assigned on a per-pool basis, not per-tx queue. */
+	r_idx = r_idx << adapter->tx_queue_shift;
+
+	if (adapter->use_pool_queues) {
+		u32 hash;
+		if (skb->sk && skb->sk->sk_hash)
+			hash = skb->sk->sk_hash;
+		else
+			hash = skb->hash;
+
+		pool_idx = hash & adapter->ring_feature[RING_F_RSS].mask;
+		r_idx |= pool_idx;
+
+		//pr_warn("ixgbe_xmit_frame:\n");
+		//pr_warn(" hash: %x\n", hash);
+		//pr_warn(" pool_idx: %d, r_idx: %d\n", pool_idx, r_idx);
+	}
+
+	if (r_idx >= adapter->num_tx_queues) {
+		//trace_printk("ixgbe_xmit_frame: r_idx (%d) > num_tx_queues "
+		//	"(%d)\n", r_idx, adapter->num_tx_queues);
+		pr_warn("ixgbe_xmit_frame: r_idx (%d) > num_tx_queues (%d)\n",
+			r_idx, adapter->num_tx_queues);
 		r_idx = r_idx % adapter->num_tx_queues;
+	}
+
+	//pr_warn("ixgbe_xmit_frame:\n");
+	//pr_warn(" r_idx: %d, skb->queue_mapping: %d\n", r_idx,
+	//	skb->queue_mapping);
+	//trace_printk("ixgbe_xmit_frame: sk: %p, xmit_more: %d\n",
+	//	     skb->sk, skb->xmit_more);
+
 	tx_ring = adapter->tx_ring[r_idx];
 #else
 	tx_ring = adapter->tx_ring[0];
 #endif
-	return ixgbe_xmit_frame_ring(skb, adapter, tx_ring);
+
+	/* I think there is a race to free the skb after ixgbe_xmit_frame_ring
+	 * is called. */
+	xmit_more = skb->xmit_more;
+
+	ret = ixgbe_xmit_frame_ring(skb, adapter, tx_ring);
+
+	/* Because we may be using multiple queues, we need to check if we need
+	 * to update the tail of any queues. */
+	if (!xmit_more) {
+		pool_start = (tx_ring->netdev_queue_index << adapter->tx_queue_shift);
+		for (i = pool_start; i < pool_start + adapter->num_tx_queues_per_pool; i++) {
+			tx_ring = adapter->tx_ring[i];
+			if (tx_ring->needs_tail_update) {
+				/* XXX: DEBUG */
+				//pr_info("ixgbe_tx_map: performing delayed "
+				//	"update to txq-%d <%d>\n",
+				//	tx_ring->queue_index,
+				//	tx_ring->netdev_queue_index);
+
+				tx_ring->needs_tail_update = 0;
+				writel(tx_ring->next_to_use, tx_ring->tail);
+				/* we need this if more than one processor can write to our tail
+				 * at a time, it synchronizes IO on IA64/Altix systems
+				 */
+				mmiowb();
+			}
+		}
+	}
+
+	return ret;
 }
 
 /**
@@ -9241,8 +9454,50 @@ ixgbe_features_check(struct sk_buff *skb, struct net_device *dev,
 }
 #endif /* HAVE_NDO_FEATURES_CHECK */
 
+/* Could be in its own ifdef.  See comment below about .ndo_set_tx_weight */
+static int
+ixgbe_set_tx_weight(struct net_device *netdev, int queue_index, u32 weight)
+{
+	struct ixgbe_adapter *adapter = netdev_priv(netdev);
+	/* Note: Because WRR only functioned if VMDq is enabled, queue weights
+	 * can only be assigned on a per-pool basis.  Because of this, we are
+	 * lying to the OS about the number of queues, so the queue_index
+	 * passed by the OS is actually the pool index. */
+	int pool_index = queue_index;
+	int err = 0;
+	u16 min_credit;
+	u16 adj_weight;
+
+	/* This function assumes weights are based on pool indexes because VDMq
+	 * is enabled */
+	ASSERT (adapter->flags & IXGBE_FLAG_VMDQ_ENABLED);
+
+	/* BS: I need to put more thought into converting from weights to
+	 * refill credits. */
+	//min_credit = IXGBE_MIN_WRR_CREDIT(netdev) >> 2;
+	min_credit = IXGBE_MIN_WRR_CREDIT(netdev); 
+	adj_weight = weight * min_credit;
+
+	/* Note: Because VMDq is enabled, weights are configured based on pool
+	 * indexes */
+	ixgbe_set_txq_credits(&adapter->hw, pool_index, adj_weight);
+
+	/* XXX: DEBUG */
+	//trace_printk("ixgbe_set_tx_weight: txq-%d: weight: %u, "
+	//	     "min_credit: %u, adj_weight: %u\n", queue_index,
+	//	     weight, min_credit, adj_weight);
+	//pr_err("ixgbe_set_tx_weight: txq-%d: weight: %u, "
+	//	     "min_credit: %u, adj_weight: %u\n", queue_index,
+	//	     weight, min_credit, adj_weight);
+
+	/* XXX: This function should maybe fail if weight is too large. */
+
+	return err;
+}
+
 #ifdef HAVE_NET_DEVICE_OPS
-static const struct net_device_ops ixgbe_netdev_ops = {
+//XXX: This can't be const to allow for WRR to be dynamically configured
+static struct net_device_ops ixgbe_netdev_ops = {
 	.ndo_open		= ixgbe_open,
 	.ndo_stop		= ixgbe_close,
 	.ndo_start_xmit		= ixgbe_xmit_frame,
@@ -9340,6 +9595,14 @@ static const struct net_device_ops ixgbe_netdev_ops = {
 #ifdef HAVE_NDO_FEATURES_CHECK
 	.ndo_features_check	= ixgbe_features_check,
 #endif /* HAVE_NDO_FEATURES_CHECK */
+
+/* XXX: In order to be more portable, this should have its own #ifdef.
+ * However, its probably not the best idea to be using this driver anyways if
+ * .ndo_set_tx_weight is not provided by the kernel, so I'm leaving it as is to
+ * get a compile error if the kernel doesn't have the necessary features */
+	//TODO: Enable! Turn on! Next!
+	//.ndo_set_tx_weight	= ixgbe_set_tx_weight,
+
 #ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
 };
 
@@ -9356,6 +9619,21 @@ static const struct net_device_ops_ext ixgbe_netdev_ops_ext = {
 
 void ixgbe_assign_netdev_ops(struct net_device *dev)
 {
+	/* Only enable the txq weight ndo if this driver is configured to use
+	 * WRR */
+	//TODO: Enable! Turn on! Next!
+	//struct ixgbe_adapter *adapter = NULL;
+	//adapter = netdev_priv(dev);
+	//if (adapter->wrr) {
+	//	ixgbe_netdev_ops.ndo_set_tx_weight = ixgbe_set_tx_weight;
+	//	pr_info ("Setting .ndo_set_tx_weight\n");
+	//} else {
+	//	ixgbe_netdev_ops.ndo_set_tx_weight = NULL;
+	//	pr_info ("Ignoring .ndo_set_tx_weight\n");
+	//}
+
+
+
 #ifdef HAVE_NET_DEVICE_OPS
 	dev->netdev_ops = &ixgbe_netdev_ops;
 #ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
@@ -9659,6 +9937,9 @@ static int __devinit ixgbe_probe(struct pci_dev *pdev,
 	 * hw->fc completely
 	 */
 	ixgbe_check_options(adapter);
+
+	/* XXX: HACK for having WRR being an option. */
+	ixgbe_assign_netdev_ops(netdev);
 
 	/* reset_hw fills in the perm_addr as well */
 	hw->phy.reset_if_overtemp = true;
