@@ -9600,8 +9600,7 @@ static struct net_device_ops ixgbe_netdev_ops = {
  * However, its probably not the best idea to be using this driver anyways if
  * .ndo_set_tx_weight is not provided by the kernel, so I'm leaving it as is to
  * get a compile error if the kernel doesn't have the necessary features */
-	//TODO: Enable! Turn on! Next!
-	//.ndo_set_tx_weight	= ixgbe_set_tx_weight,
+	.ndo_set_tx_weight	= ixgbe_set_tx_weight,
 
 #ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
 };
@@ -9621,17 +9620,15 @@ void ixgbe_assign_netdev_ops(struct net_device *dev)
 {
 	/* Only enable the txq weight ndo if this driver is configured to use
 	 * WRR */
-	//TODO: Enable! Turn on! Next!
-	//struct ixgbe_adapter *adapter = NULL;
-	//adapter = netdev_priv(dev);
-	//if (adapter->wrr) {
-	//	ixgbe_netdev_ops.ndo_set_tx_weight = ixgbe_set_tx_weight;
-	//	pr_info ("Setting .ndo_set_tx_weight\n");
-	//} else {
-	//	ixgbe_netdev_ops.ndo_set_tx_weight = NULL;
-	//	pr_info ("Ignoring .ndo_set_tx_weight\n");
-	//}
-
+	struct ixgbe_adapter *adapter = NULL;
+	adapter = netdev_priv(dev);
+	if (adapter->wrr) {
+		ixgbe_netdev_ops.ndo_set_tx_weight = ixgbe_set_tx_weight;
+		pr_info ("Setting .ndo_set_tx_weight\n");
+	} else {
+		ixgbe_netdev_ops.ndo_set_tx_weight = NULL;
+		pr_info ("Ignoring .ndo_set_tx_weight\n");
+	}
 
 
 #ifdef HAVE_NET_DEVICE_OPS
