@@ -837,10 +837,10 @@ static int ixgbe_acquire_msix_vectors(struct ixgbe_adapter *adapter)
 	/* XXX: If Flow director can steer traffic to more RX queues, then this
 	 * isn't necessary. */
 	//TODO: Enable? Disable? Definitely needs some attention!
-	//if (adapter->num_rx_queues_per_pool > 1) {
-	//	vectors = min_t(int, vectors, adapter->num_rx_queues_per_pool);
-	//	pr_err(" limiting vectors to rx_queues_per_pool: %d", vectors);
-	//}
+	if (adapter->num_rx_queues_per_pool > 1) {
+		vectors = min_t(int, vectors, adapter->num_rx_queues_per_pool);
+		pr_err(" limiting vectors to rx_queues_per_pool: %d", vectors);
+	}
 
 	/* Some vectors are necessary for non-queue interrupts */
 	vectors += NON_Q_VECTORS;
@@ -998,7 +998,7 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 	if (txr_count && !rxr_count) {
 		/* tx only vector */
 		if (adapter->tx_itr_setting == 1)
-			q_vector->itr = IXGBE_12K_ITR;
+			q_vector->itr = IXGBE_20K_ITR;
 		else
 			q_vector->itr = adapter->tx_itr_setting;
 	} else {
@@ -1030,7 +1030,10 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 
 		/* update count and index */
 		txr_count--;
-		txr_idx += v_count;
+		//txr_idx += v_count;
+
+                /* XXX: Used for disabling tx interleaving. */
+		txr_idx += 1;
 
 		/* push pointer to next ring */
 		ring++;
@@ -1081,6 +1084,16 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 		/* push pointer to next ring */
 		ring++;
 	}
+
+	/* XXX: DEBUG */
+	//pr_err ("ixgbe_alloc_q_vector %d:\n", v_idx);
+	//ixgbe_for_each_ring(ring, q_vector->rx) {
+	//	pr_err(" rxq-%d\n", ring->queue_index);
+	//}
+	//ixgbe_for_each_ring(ring, q_vector->tx) {
+	//	pr_err(" txq-%d (netdev txq-%d)\n", ring->queue_index,
+	//	       ring->netdev_queue_index);
+	//}
 
 	return 0;
 }
@@ -1146,6 +1159,13 @@ static int ixgbe_alloc_q_vectors(struct ixgbe_adapter *adapter)
 	for (; v_idx < q_vectors; v_idx++) {
 		int rqpv = DIV_ROUND_UP(rxr_remaining, q_vectors - v_idx);
 		int tqpv = DIV_ROUND_UP(txr_remaining, q_vectors - v_idx);
+                /* XXX: This function interleaves rings by a stride of
+                 * q_vectors for some reason.  Unfortunately, this makes
+                 * assigning queue affinity for XPS more difficult. 
+		 * However, because we only get 4 rx queues, interleaving is
+		 * actually hugely important to not binding all 4 rx queues to
+		 * a single interrupt. */
+#if 0
 		err = ixgbe_alloc_q_vector(adapter, q_vectors, v_idx,
 					   tqpv, txr_idx,
 					   rqpv, rxr_idx);
@@ -1158,6 +1178,21 @@ static int ixgbe_alloc_q_vectors(struct ixgbe_adapter *adapter)
 		txr_remaining -= tqpv;
 		rxr_idx++;
 		txr_idx++;
+#else
+                /* XXX: Testing out only using rx interleaving. */
+		err = ixgbe_alloc_q_vector(adapter, q_vectors, v_idx,
+					   tqpv, txr_idx,
+					   rqpv, rxr_idx);
+
+		if (err)
+			goto err_out;
+
+		/* update counts and index */
+		rxr_remaining -= rqpv;
+		txr_remaining -= tqpv;
+		rxr_idx++;
+		txr_idx += tqpv;
+#endif
 	}
 
 	return IXGBE_SUCCESS;

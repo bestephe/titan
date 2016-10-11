@@ -2550,6 +2550,17 @@ static int ixgbe_request_msix_irqs(struct ixgbe_adapter *adapter)
 			snprintf(q_vector->name, sizeof(q_vector->name) - 1,
 				 "%s-%s-%d", netdev->name, "TxRx", ri++);
 			ti++;
+
+                        /* XXX: DEBUG */
+			struct ixgbe_ring *ring;
+			pr_err (" q_vector: %s\n", q_vector->name);
+			ixgbe_for_each_ring(ring, q_vector->rx) {
+			    pr_err("  rxq-%d\n", ring->queue_index);
+			}
+			ixgbe_for_each_ring(ring, q_vector->tx) {
+			    pr_err("  txq-%d (netdev txq-%d)\n",
+				   ring->queue_index, ring->netdev_queue_index);
+			}
 		} else if (q_vector->rx.ring) {
 			snprintf(q_vector->name, sizeof(q_vector->name) - 1,
 				 "%s-%s-%d", netdev->name, "rx", ri++);
