@@ -84,7 +84,7 @@
 
 /* TX/RX descriptor defines */
 #define IXGBE_DEFAULT_TXD		512
-#define IXGBE_DEFAULT_TX_WORK		256
+#define IXGBE_DEFAULT_TX_WORK		2048
 #define IXGBE_MAX_TXD			4096
 #define IXGBE_MIN_TXD			64
 
@@ -252,6 +252,10 @@ struct vf_macvlans {
 #else
 #define DESC_NEEDED	(MAX_SKB_FRAGS + 4)
 #endif
+ 
+/* Minimum Tx WRR credit */
+#define IXGBE_MIN_WRR_CREDIT(netdev)	\
+	((((netdev)->mtu / 2) + IXGBE_DCB_CREDIT_QUANTUM - 1) / IXGBE_DCB_CREDIT_QUANTUM)
 
 /* wrapper around a pointer to a socket buffer,
  * so a DMA handle can be stored along with the buffer */
@@ -346,6 +350,9 @@ struct ixgbe_ring {
 	u16 count;			/* amount of descriptors */
 
 	u8 queue_index; /* needed for multiqueue queue management */
+	u8 netdev_queue_index; /* needed for lying to the OS about the number of TX queues */
+	u8 needs_tail_update; /* Used in case skb->xmit_more is spread across
+			       * multiple shadow queues. */
 	u8 reg_idx;			/* holds the special value that gets
 					 * the hardware register offset
 					 * associated with this ring, which is
@@ -395,11 +402,17 @@ enum ixgbe_ring_f_enum {
 #define IXGBE_MAX_FDIR_INDICES		63
 #if IS_ENABLED(CONFIG_FCOE)
 #define IXGBE_MAX_FCOE_INDICES	8
-#define MAX_RX_QUEUES	(IXGBE_MAX_FDIR_INDICES + IXGBE_MAX_FCOE_INDICES)
-#define MAX_TX_QUEUES	(IXGBE_MAX_FDIR_INDICES + IXGBE_MAX_FCOE_INDICES)
+/* NOTE: Just hardcode this to 128 because it is biggest upper bound */
+#define MAX_RX_QUEUES	(128)
+#define MAX_TX_QUEUES	(128)
+//#define MAX_RX_QUEUES	(IXGBE_MAX_FDIR_INDICES + IXGBE_MAX_FCOE_INDICES)
+//#define MAX_TX_QUEUES	(IXGBE_MAX_FDIR_INDICES + IXGBE_MAX_FCOE_INDICES)
 #else
-#define MAX_RX_QUEUES	(IXGBE_MAX_FDIR_INDICES + 1)
-#define MAX_TX_QUEUES	(IXGBE_MAX_FDIR_INDICES + 1)
+/* NOTE: Just hardcode this to 128 because it is biggest upper bound */
+#define MAX_RX_QUEUES	(128)
+#define MAX_TX_QUEUES	(128)
+//#define MAX_RX_QUEUES	(IXGBE_MAX_FDIR_INDICES + 1)
+//#define MAX_TX_QUEUES	(IXGBE_MAX_FDIR_INDICES + 1)
 #endif /* CONFIG_FCOE */
 struct ixgbe_ring_feature {
 	u16 limit;	/* upper limit on feature indices */
@@ -757,9 +770,21 @@ struct ixgbe_adapter {
 #define IXGBE_FLAG2_VLAN_PROMISC		(u32)(1 << 18)
 
 	bool cloud_mode;
+ 
+	/* Variables for changing driver config to make experiments easier */
+	bool wrr;
+	bool use_pool_queues;
+	bool xmit_batch;
+	bool use_sgseg;
+	bool use_pkt_ring;
+	u32 kern_gso_size;
+	u32 drv_gso_size;
 
 	/* Tx fast path data */
 	int num_tx_queues;
+	int num_tx_pools;
+	int num_tx_queues_per_pool;
+	int tx_queue_shift;
 	u16 tx_itr_setting;
 	u16 tx_work_limit;
 
@@ -1106,6 +1131,13 @@ void ixgbe_dbg_exit(void);
 static inline struct netdev_queue *txring_txq(const struct ixgbe_ring *ring)
 {
 	return netdev_get_tx_queue(ring->netdev, ring->queue_index);
+	//TODO: Turn this on!
+#if 0
+	/* XXX: We are lying to the OS about the number of tx queues. */
+	//return netdev_get_tx_queue(ring->netdev, ring->queue_index);
+
+	return netdev_get_tx_queue(ring->netdev, ring->netdev_queue_index);
+#endif
 }
 #endif
 

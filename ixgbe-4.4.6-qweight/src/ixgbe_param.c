@@ -130,6 +130,13 @@ IXGBE_PARAM(DCA, "Disable or enable Direct Cache Access, 0=disabled, "
 IXGBE_PARAM(RSS, "Number of Receive-Side Scaling Descriptor Queues, "
 	    "default 0=number of cpus");
 
+IXGBE_PARAM(WRR, "Use WRR scheduling between Tx queues. 0=disabled. 1=enabled");
+
+IXGBE_PARAM(UsePoolQueues,  "Transparently use all of the queues in a pool. 0=disabled. 1=enabled");
+
+IXGBE_PARAM(GSOSize, "GSO Size, range 0-262144"
+	    "default 65536 bytes"); 
+
 /* VMDQ - Virtual Machine Device Queues (VMDQ)
  *
  * Valid Range: 1-16
@@ -610,6 +617,109 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 			adapter->flags |= IXGBE_FLAG_DCA_ENABLED_DATA;
 	}
 #endif /* CONFIG_DCA */
+	{ /* WRR Support */
+                static struct ixgbe_option opt = {
+                        .type = enable_option,
+                        .name = "WRR Support",
+                        .err  = "defaulting to Disabled",
+                        .def  = OPTION_DISABLED
+                };
+#ifdef module_param_array
+                if (num_WRR > bd) {
+#endif
+                        unsigned int wrr = WRR[bd];
+			//printk("WRR value :::: %d",tso);
+                        ixgbe_validate_option(&wrr, &opt);
+			if(wrr)
+			{
+				printk("Enabling WRR");
+                                adapter->wrr = true;
+			}
+			else
+			{
+				printk("Disabling WRR");
+				adapter->wrr = false;
+			}
+
+#ifdef module_param_array
+                } else {
+			//printk("Deafault WRR value");
+			//printk("%d",opt.def);
+                        if (opt.def == OPTION_ENABLED) {
+				printk("Enabling WRR");
+                                adapter->wrr = true;
+                        } else {
+				printk("Disabling WRR");
+				adapter->wrr = false;
+                        }
+                }
+#endif
+        }
+        { /* GSOSize */
+                static struct ixgbe_option opt = {
+                        .type = range_option,
+                        .name = "GSO Size initialization",
+                        .err  = "using default.",
+                        .def  = 0,
+                        .arg  = { .r = { .min = 0,
+                                         .max = 262144} }
+                };
+		struct net_device *netdev = adapter->netdev;
+                unsigned int gsosize = GSOSize[bd];
+#ifdef module_param_array
+                if (num_GSOSize > bd) {
+#endif
+                        ixgbe_validate_option(&gsosize, &opt);
+                        if (gsosize)
+			{
+				//pr_info("GSOSize Non-default value setup: %u\n",
+                                //        gsosize);
+                                netif_set_gso_max_size(netdev, gsosize);
+                                adapter->kern_gso_size = gsosize;
+			}
+#ifdef module_param_array
+                } else if (opt.def == 0) {
+			//pr_info("GSOSize Default Value\n");
+                        adapter->kern_gso_size = 65536;
+                        netif_set_gso_max_size(netdev, 65536);
+                }
+#endif
+        }
+	{ /* Use all of the tx queues in a pool */
+                static struct ixgbe_option opt = {
+                        .type = enable_option,
+                        .name = "Use all pool queues",
+                        .err  = "defaulting to Disabled",
+                        .def  = OPTION_DISABLED
+                };
+#ifdef module_param_array
+                if (num_UsePoolQueues > bd) {
+#endif
+                        unsigned int use_pool_queues = UsePoolQueues[bd];
+			//printk("UsePoolQueues value :::: %d",tso);
+                        ixgbe_validate_option(&use_pool_queues, &opt);
+			if(use_pool_queues)
+			{
+				pr_info ("Enabling UsePoolQueues\n");
+                                adapter->use_pool_queues = true;
+			}
+			else
+			{
+				pr_info ("Disabling UsePoolQueues\n");
+				adapter->use_pool_queues = false;
+			}
+
+#ifdef module_param_array
+                } else {
+                        if (opt.def == OPTION_ENABLED)
+                                adapter->use_pool_queues = true;
+                        else
+				adapter->use_pool_queues = false;
+			pr_info ("Default UsePoolQueues value: %d\n",
+				 adapter->use_pool_queues);
+                }
+#endif
+        }
 	{ /* Receive-Side Scaling (RSS) */
 		static struct ixgbe_option opt = {
 			.type = range_option,
@@ -617,11 +727,17 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 			.err  = "using default.",
 			.def  = 0,
 			.arg  = { .r = { .min = 0,
-					 .max = 16} }
+					 .max = 64} }
 		};
 		unsigned int rss = RSS[bd];
+
 		/* adjust Max allowed RSS queues based on MAC type */
-		opt.arg.r.max = ixgbe_max_rss_indices(adapter);
+                /* TODO: I am not sure that the 82599 supports more than 16
+                 * RSS queues.  If this is the case, this code could be
+                 * broken.  In order to fix this, the driver needs to be
+                 * modified to have a different number of tx queues than rx
+                 * queues. */
+		opt.arg.r.max = 64; //ixgbe_max_rss_indices(adapter);
 
 #ifdef module_param_array
 		if (num_RSS > bd) {
@@ -637,8 +753,10 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 			feature[RING_F_RSS].limit = rss;
 #ifdef module_param_array
 		} else if (opt.def == 0) {
-			rss = min_t(int, ixgbe_max_rss_indices(adapter),
-				    num_online_cpus());
+			/* We allow for more queues than cores for testing. */
+			//rss = min_t(int, ixgbe_max_rss_indices(adapter),
+			//	    num_online_cpus());
+			rss = ixgbe_max_rss_indices(adapter);
 			feature[RING_F_RSS].limit = rss;
 		}
 #endif
@@ -657,7 +775,8 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 			.type = range_option,
 			.name = "Virtual Machine Device Queues (VMDQ)",
 			.err  = "defaulting to Disabled",
-			.def  = OPTION_DISABLED,
+ 			.def  = OPTION_DISABLED,
+			//.def  = 16,
 			.arg  = { .r = { .min = OPTION_DISABLED,
 					 .max = IXGBE_MAX_VMDQ_INDICES
 				} }
@@ -683,8 +802,18 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 			 * perspective */
 			if (vmdq > 1) {
 				*aflags |= IXGBE_FLAG_VMDQ_ENABLED;
-			} else
+			} else {
 				*aflags &= ~IXGBE_FLAG_VMDQ_ENABLED;
+			}
+
+			//TODO: Enable!
+			/* In the qweight version, 1 still means VMDq so we can
+			 * get queue weights? */
+			//if (vmdq > 0) {
+			//	*aflags |= IXGBE_FLAG_VMDQ_ENABLED;
+			//} else {
+			//	*aflags &= ~IXGBE_FLAG_VMDQ_ENABLED;
+			//}
 
 			feature[RING_F_VMDQ].limit = vmdq;
 #ifdef module_param_array
@@ -708,6 +837,21 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 				feature[RING_F_VMDQ].limit = 0;
 			}
 		}
+
+                /* XXX: HACK to ensure that VMDq is always enabled */
+		if (!(*aflags & IXGBE_FLAG_VMDQ_ENABLED)) {
+			DPRINTK(PROBE, INFO,
+				"The QWeight version of ixgbe requires that "
+				"VMDq is enabled. Enabling VMDq.\n");
+			pr_warn("The QWeight version of ixgbe "
+				"requires that VMDq is enabled. Enabling VMDq.\n");
+
+			//TODO: Enable!
+			//*aflags |= IXGBE_FLAG_VMDQ_ENABLED;
+			pr_err("Ignoring enabling VMDQ!\n");
+
+			feature[RING_F_VMDQ].limit = opt.def;
+                }
 	}
 #ifdef CONFIG_PCI_IOV
 	{ /* Single Root I/O Virtualization (SR-IOV) */
@@ -821,6 +965,9 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 				break;
 			default:
 				ixgbe_validate_option(&itr, &opt);
+				DPRINTK(PROBE, INFO, "static interrupt "
+					"throttling enabled: %d ITRPS\n",
+					itr);
 				/* the first bit is used as control */
 				adapter->rx_itr_setting = (1000000/itr) << 2;
 				break;
