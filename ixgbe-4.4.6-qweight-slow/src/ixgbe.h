@@ -281,7 +281,7 @@ struct ixgbe_pkt_hdr {
 //reasonable value of this should be.
 //TODO: perhaps current batch size should be a module parameter to make
 //measurement easier.
-#define IXGBE_MAX_XMIT_BATCH_SIZE           (4)
+#define IXGBE_MAX_XMIT_BATCH_SIZE           (8)
 
 #define IXGBE_MAX_SEG_BATCH                 (512)
 

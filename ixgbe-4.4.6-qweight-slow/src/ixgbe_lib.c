@@ -1047,8 +1047,9 @@ static int ixgbe_alloc_q_vector(struct ixgbe_adapter *adapter,
 
 		/* update count and index */
 		txr_count--;
-                /* XXX: Testing out only using rx interleaving. */
 		//txr_idx += v_count;
+
+                /* XXX: Used for disabling tx interleaving. */
 		txr_idx += 1;
 
 		/* push pointer to next ring */

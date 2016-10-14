@@ -785,11 +785,11 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 	tx_desc = IXGBE_TX_DESC(tx_ring, i);
 	i -= tx_ring->count;
 
-	trace_printk("ixgbe_clean_tx_irq: dev: %s, queue: %d "
-		     "(os queue: %d), ntu: %d, ntc: %d budget: %d\n",
-		     netdev_ring(tx_ring)->name, tx_ring->queue_index,
-		     tx_ring->netdev_queue_index, tx_ring->next_to_use,
-		     tx_ring->next_to_clean, budget);
+	//trace_printk("ixgbe_clean_tx_irq: dev: %s, queue: %d "
+	//	     "(os queue: %d), ntu: %d, ntc: %d budget: %d\n",
+	//	     netdev_ring(tx_ring)->name, tx_ring->queue_index,
+	//	     tx_ring->netdev_queue_index, tx_ring->next_to_use,
+	//	     tx_ring->next_to_clean, budget);
 	//if (tx_buffer->next_to_watch) {
 	//	trace_printk("ixgbe_clean_tx_irq: work pending! dev: %s, "
 	//		     "queue: %d (os queue: %d)\n",
@@ -1017,13 +1017,13 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 		budget--;
 
                 if (budget == 0) {
-                    //pr_info ("WARNING: entire clean_tx budget consumed!\n");
-		    trace_printk ("ixgbe_clean_tx_irq: dev: %s, queue: %d "
-				  "(os txq-%d). WARNING: entire clean_tx "
-				  "budget consumed!\n",
-				  netdev_ring(tx_ring)->name,
-				  tx_ring->queue_index,
-				  tx_ring->netdev_queue_index);
+			//pr_info ("WARNING: entire clean_tx budget consumed!\n");
+			//trace_printk ("ixgbe_clean_tx_irq: dev: %s, queue: %d "
+			//	      "(os txq-%d). WARNING: entire clean_tx "
+			//	      "budget consumed!\n",
+			//	      netdev_ring(tx_ring)->name,
+			//	      tx_ring->queue_index,
+			//	      tx_ring->netdev_queue_index);
                 }
 	} while (likely(budget));
 
@@ -1057,19 +1057,19 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 			"  jiffies              <%lx>\n",
 			tx_ring->tx_buffer_info[i].time_stamp, jiffies);
 
-		trace_printk("Detected Tx Unit Hang: "
-			"  Tx Queue             <%d> <fake %d>"
-			"  TDH, TDT             <%x>, <%x>"
-			"  next_to_use          <%x>"
-			"  next_to_clean        <%x>",
-			tx_ring->queue_index, tx_ring->netdev_queue_index,
-			IXGBE_READ_REG(hw, IXGBE_TDH(tx_ring->reg_idx)),
-			IXGBE_READ_REG(hw, IXGBE_TDT(tx_ring->reg_idx)),
-			tx_ring->next_to_use, i);
-		trace_printk("tx_buffer_info[next_to_clean]\n"
-			"  time_stamp           <%lx>\n"
-			"  jiffies              <%lx>\n",
-			tx_ring->tx_buffer_info[i].time_stamp, jiffies);
+		//trace_printk("Detected Tx Unit Hang: "
+		//	"  Tx Queue             <%d> <fake %d>"
+		//	"  TDH, TDT             <%x>, <%x>"
+		//	"  next_to_use          <%x>"
+		//	"  next_to_clean        <%x>",
+		//	tx_ring->queue_index, tx_ring->netdev_queue_index,
+		//	IXGBE_READ_REG(hw, IXGBE_TDH(tx_ring->reg_idx)),
+		//	IXGBE_READ_REG(hw, IXGBE_TDT(tx_ring->reg_idx)),
+		//	tx_ring->next_to_use, i);
+		//trace_printk("tx_buffer_info[next_to_clean]\n"
+		//	"  time_stamp           <%lx>\n"
+		//	"  jiffies              <%lx>\n",
+		//	tx_ring->tx_buffer_info[i].time_stamp, jiffies);
 
 		netif_stop_subqueue(netdev_ring(tx_ring),
 				    ring_queue_index(tx_ring));
@@ -1078,9 +1078,9 @@ static bool ixgbe_clean_tx_irq(struct ixgbe_q_vector *q_vector,
 		       "tx hang %d detected on queue %d, resetting adapter\n",
 		       adapter->tx_timeout_count + 1, tx_ring->queue_index);
 
-		trace_printk(
-		       "tx hang %d detected on queue %d, resetting adapter\n",
-		       adapter->tx_timeout_count + 1, tx_ring->queue_index);
+		//trace_printk(
+		//       "tx hang %d detected on queue %d, resetting adapter\n",
+		//       adapter->tx_timeout_count + 1, tx_ring->queue_index);
 
 		ixgbe_tx_timeout_reset(adapter);
 
@@ -2708,7 +2708,7 @@ int ixgbe_poll(struct napi_struct *napi, int budget)
 	bool clean_complete = true;
 
 	/* XXX: DEBUG */
-	trace_printk("ixgbe_poll: name: %s\n", q_vector->name);
+	//trace_printk("ixgbe_poll: name: %s\n", q_vector->name);
 
 #if IS_ENABLED(CONFIG_DCA)
 	if (adapter->flags & IXGBE_FLAG_DCA_ENABLED)
@@ -10031,13 +10031,13 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
         pktr_count = skb_shinfo(skb)->gso_segs;
 
 	/* XXX: DEBUG */
-	trace_printk("ixgbe_xmit_frame_ring: dev: %s, queue: %d (os txq-%d), "
-		     "desc_unused: %d, skb_len: %d, xmit_more: %d, "
-		     "ntu: %d (%x), ntc: %d (%x)\n", netdev_ring(tx_ring)->name,
-		     tx_ring->queue_index, tx_ring->netdev_queue_index,
-		     ixgbe_desc_unused(tx_ring), skb->len, skb->xmit_more,
-		     tx_ring->next_to_use, tx_ring->next_to_use,
-		     tx_ring->next_to_clean, tx_ring->next_to_clean);
+	//trace_printk("ixgbe_xmit_frame_ring: dev: %s, queue: %d (os txq-%d), "
+	//	     "desc_unused: %d, skb_len: %d, xmit_more: %d, "
+	//	     "ntu: %d (%x), ntc: %d (%x)\n", netdev_ring(tx_ring)->name,
+	//	     tx_ring->queue_index, tx_ring->netdev_queue_index,
+	//	     ixgbe_desc_unused(tx_ring), skb->len, skb->xmit_more,
+	//	     tx_ring->next_to_use, tx_ring->next_to_use,
+	//	     tx_ring->next_to_clean, tx_ring->next_to_clean);
 
 	if (ixgbe_maybe_stop_tx(tx_ring, count)) {
                 pr_info ("ixgbe_xmit_frame_ring: returning NETDEV_TX_BUSY.\n");
@@ -10188,7 +10188,8 @@ netdev_tx_t ixgbe_xmit_frame_ring(struct sk_buff *skb,
 #if IS_ENABLED(CONFIG_FCOE)
 xmit_fcoe:
 #endif /* CONFIG_FCOE */
-        if (tso) {
+        //if (tso) {
+        if (0) {
                 if (adapter->use_sgseg) {
                         ixgbe_tx_map_sgsegs(tx_ring, first, hdr_len,
                                             adapter->drv_gso_size);
@@ -10212,8 +10213,8 @@ xmit_fcoe:
 
 out_drop:
 	/* DEBUG */
-	trace_printk("ixgbe_xmit_frame_ring: out_drop! skb: %p, txq-%d\n", 
-		     first->skb, tx_ring->netdev_queue_index);
+	//trace_printk("ixgbe_xmit_frame_ring: out_drop! skb: %p, txq-%d\n", 
+	//	     first->skb, tx_ring->netdev_queue_index);
 
 	dev_kfree_skb_any(first->skb);
 	first->skb = NULL;
@@ -10268,8 +10269,8 @@ static netdev_tx_t ixgbe_xmit_frame(struct sk_buff *skb,
 	}
 
 	if (r_idx >= adapter->num_tx_queues) {
-		trace_printk("ixgbe_xmit_frame: r_idx (%d) > num_tx_queues "
-			"(%d)\n", r_idx, adapter->num_tx_queues);
+		//trace_printk("ixgbe_xmit_frame: r_idx (%d) > num_tx_queues "
+		//	"(%d)\n", r_idx, adapter->num_tx_queues);
 		pr_warn("ixgbe_xmit_frame: r_idx (%d) > num_tx_queues (%d)\n",
 			r_idx, adapter->num_tx_queues);
 		r_idx = r_idx % adapter->num_tx_queues;
@@ -11004,9 +11005,9 @@ ixgbe_set_tx_weight(struct net_device *netdev, int queue_index, u32 weight)
 	ixgbe_set_txq_credits(&adapter->hw, pool_index, adj_weight);
 
 	/* XXX: DEBUG */
-	trace_printk("ixgbe_set_tx_weight: txq-%d: weight: %u, "
-		     "min_credit: %u, adj_weight: %u\n", queue_index,
-		     weight, min_credit, adj_weight);
+	//trace_printk("ixgbe_set_tx_weight: txq-%d: weight: %u, "
+	//	     "min_credit: %u, adj_weight: %u\n", queue_index,
+	//	     weight, min_credit, adj_weight);
 	//pr_err("ixgbe_set_tx_weight: txq-%d: weight: %u, "
 	//	     "min_credit: %u, adj_weight: %u\n", queue_index,
 	//	     weight, min_credit, adj_weight);

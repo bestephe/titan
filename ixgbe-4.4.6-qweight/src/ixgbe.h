@@ -777,6 +777,7 @@ struct ixgbe_adapter {
  
 	/* Variables for changing driver config to make experiments easier */
 	bool wrr;
+	int wrr_credit_mult;
 	bool use_pool_queues;
 	bool xmit_batch;
 	bool use_sgseg;

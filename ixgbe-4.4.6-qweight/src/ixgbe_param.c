@@ -132,6 +132,8 @@ IXGBE_PARAM(RSS, "Number of Receive-Side Scaling Descriptor Queues, "
 
 IXGBE_PARAM(WRR, "Use WRR scheduling between Tx queues. 0=disabled. 1=enabled");
 
+IXGBE_PARAM(WrrCreditMult, "A multiplier to apply to the amount of WRR credits given to a queue");
+
 IXGBE_PARAM(UsePoolQueues,  "Transparently use all of the queues in a pool. 0=disabled. 1=enabled");
 
 IXGBE_PARAM(GSOSize, "GSO Size, range 0-262144"
@@ -652,6 +654,32 @@ void __devinit ixgbe_check_options(struct ixgbe_adapter *adapter)
 				printk("Disabling WRR");
 				adapter->wrr = false;
                         }
+                }
+#endif
+        }
+	{ /* WRR Credits */
+                static struct ixgbe_option opt = {
+                        .type = range_option,
+                        .name = "WRR Credits",
+                        .err  = "using default.",
+                        .def  = 1,
+                        .arg  = { .r = { .min = 1,
+                                         .max = 100} }
+                };
+#ifdef module_param_array
+                if (num_WrrCreditMult > bd) {
+#endif
+                        unsigned int wrr_credit_mult = WrrCreditMult[bd];
+			pr_info("WRR credit mult value :::: %d",wrr_credit_mult);
+                        ixgbe_validate_option(&wrr_credit_mult, &opt);
+			if(wrr_credit_mult)
+			{
+                                adapter->wrr_credit_mult = wrr_credit_mult;
+			}
+
+#ifdef module_param_array
+                } else {
+			adapter->wrr_credit_mult = opt.def;
                 }
 #endif
         }

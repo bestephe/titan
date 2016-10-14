@@ -2552,15 +2552,15 @@ static int ixgbe_request_msix_irqs(struct ixgbe_adapter *adapter)
 			ti++;
 
                         /* XXX: DEBUG */
-			struct ixgbe_ring *ring;
-			pr_err (" q_vector: %s\n", q_vector->name);
-			ixgbe_for_each_ring(ring, q_vector->rx) {
-			    pr_err("  rxq-%d\n", ring->queue_index);
-			}
-			ixgbe_for_each_ring(ring, q_vector->tx) {
-			    pr_err("  txq-%d (netdev txq-%d)\n",
-				   ring->queue_index, ring->netdev_queue_index);
-			}
+			//struct ixgbe_ring *ring;
+			//pr_err (" q_vector: %s\n", q_vector->name);
+			//ixgbe_for_each_ring(ring, q_vector->rx) {
+			//    pr_err("  rxq-%d\n", ring->queue_index);
+			//}
+			//ixgbe_for_each_ring(ring, q_vector->tx) {
+			//    pr_err("  txq-%d (netdev txq-%d)\n",
+			//	   ring->queue_index, ring->netdev_queue_index);
+			//}
 		} else if (q_vector->rx.ring) {
 			snprintf(q_vector->name, sizeof(q_vector->name) - 1,
 				 "%s-%s-%d", netdev->name, "rx", ri++);
@@ -2920,11 +2920,21 @@ static void ixgbe_set_txq_credits(struct ixgbe_hw *hw, int txq_i, u16 refill)
 	//ixgbe_get_txq_credits(hw, txq_i);
 }
 
+static int
+ixgbe_set_tx_weight(struct net_device *netdev, int queue_index, u32 weight);
+
 static void ixgbe_setup_mtqc_wrr(struct ixgbe_adapter *adapter)
 {
+	struct net_device *netdev = adapter->netdev;
 	int i;
-	u16 min_credit;
+	//u16 min_credit;
 
+	for (i = 0; i < adapter->num_tx_queues; i++) {
+		ixgbe_set_tx_weight(netdev, i, 1);
+		//ixgbe_get_txq_credits(&adapter->hw, i);
+	}
+
+#if 0
 	/* BS: I need to put more thought into converting from weights to
 	 * refill credits. */
 	min_credit = IXGBE_MIN_WRR_CREDIT(adapter->netdev);
@@ -2933,6 +2943,7 @@ static void ixgbe_setup_mtqc_wrr(struct ixgbe_adapter *adapter)
 		ixgbe_set_txq_credits(&adapter->hw, i,
 		    min_credit);
 	}
+#endif
 
         /* XXX: DEBUG */
 #if 0
@@ -9487,6 +9498,9 @@ ixgbe_set_tx_weight(struct net_device *netdev, int queue_index, u32 weight)
 	 * refill credits. */
 	//min_credit = IXGBE_MIN_WRR_CREDIT(netdev) >> 2;
 	min_credit = IXGBE_MIN_WRR_CREDIT(netdev); 
+	if (adapter->wrr_credit_mult > 1) {
+		min_credit *= adapter->wrr_credit_mult;
+	}
 	adj_weight = weight * min_credit;
 
 	/* Note: Because VMDq is enabled, weights are configured based on pool

@@ -385,9 +385,12 @@ int dqa_txq_needs_seg(struct net_device *dev, struct netdev_queue *txq)
 	struct dqa *dqa = &dev->dqa;
 	int needs_seg = 0;
 
-	if (dqa->dqa_alg == DQA_ALG_OVERFLOWQ) {
-		needs_seg = dqa_txq_needs_seg_overflowq(dev, txq);
-	}
+	/* Was this a good idea? Probably not? It's definitely only for an edge
+	 * case anyways. I'm disabling it because it makes the evaluation more
+	 * annoying.*/
+	//if (dqa->dqa_alg == DQA_ALG_OVERFLOWQ) {
+	//	needs_seg = dqa_txq_needs_seg_overflowq(dev, txq);
+	//}
 
 	if (dqa->segment_sharedq &&
 	    atomic_read(&txq->dqa_queue.tx_sk_enqcnt) > 1) {
