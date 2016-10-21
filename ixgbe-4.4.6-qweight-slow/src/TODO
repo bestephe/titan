@@ -1,9 +1,0 @@
-- Figure out why we get Fake TX Hangs with "UsePoolQueues=1,1"
-
-- Give the RX queues their own interrupts:
-	- Also, each RSS queue should have its own interrupt, which means that
-	  maybe we want to go back to interleaving for the RX queues.
-
-- Implement the ndo_set_tx_maxrate(...) ndo:
-	- Would also require the kernel to automatically use this NDO based on
-	  qdisc in order to do anything effective
